@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import os
 from ase.io import read
-from xyz2mol import xyz2smiles
 from tqdm import tqdm
 from bidict import bidict
 
