@@ -1,9 +1,11 @@
-from io import TextIOWrapper
-from math import floor
-import numpy as np
-import os
-from tqdm import tqdm
+# Gdata version
 from bidict import bidict
+from tqdm import tqdm
+import os
+import numpy as np
+from math import floor
+from io import TextIOWrapper
+version = '0.1 alpha'
 
 
 def element_dic(sym):
@@ -175,7 +177,7 @@ class Gdata():
                 break
             line_temp = line_temp.split()
             atom1 = int(line_temp[0]) - 1
-            topo_temp[atom1, atom1] = -1    # set self bond to -1
+            topo_temp[atom1, atom1] = 0    # set self bond to 0
             for j in range(1, len(line_temp), 2):
                 atom2 = int(line_temp[j]) - 1
                 bonding = int(floor(float(line_temp[j+1])))
@@ -837,6 +839,29 @@ class Gdata():
             print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
         file.close()
 
+    # get adjacency matrix
+    def get_adjacency(self) -> np.ndarray:
+        """
+        Output adjacency for GCN
+
+        Args:
+            None
+        Returns:
+            adjacency: adjacency matrix for GCN. type <numpy.ndarray>
+        """
+
+        # modified topologies to ajacency matrix, move all non-zero to 1
+        adjacency = self.topologies[1:]
+
+        for data_num in range(adjacency.shape[0]):
+            for row in range(adjacency.shape[1]):
+                for col in range(adjacency.shape[2]):
+                    if adjacency[data_num, row, col] == 0:
+                        continue
+                    adjacency[data_num, row, col] = 1
+
+        return adjacency
+
     # get topological data
     def get_atom_info(self, matrix: bool = False) -> np.ndarray:
         """
@@ -1269,6 +1294,7 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
     data_num_2 = Gdata2.get_data_shape().max()
 
     # compared name to merge
+    print('Gdata: start merging data...')
     for loc1 in tqdm(range(data_num_1)):
         name_temp = name1[loc1]
         loc2_array = np.where(name2 == name_temp)
