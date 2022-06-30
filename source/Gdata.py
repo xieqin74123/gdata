@@ -839,6 +839,27 @@ class Gdata():
             print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
         file.close()
 
+    # get degree matrix
+    def get_degree(self) -> np.ndarray:
+        """
+        Output degree matrix for GCN
+
+        Args:
+            None
+        Returns:
+            degree: degree matrix for GCN. type <numpy.ndarray>
+        """
+
+        # modified topologies to degree matrix
+        adjacency = self.get_adjacency()
+        degree = np.zeros(adjacency.shape)
+
+        for data_num in range(adjacency.shape[0]):
+            for rowcol in range(adjacency.shape[1]):
+                degree[data_num, rowcol, rowcol] = np.sum(adjacency[data_num, rowcol])
+        
+        return degree
+
     # get adjacency matrix
     def get_adjacency(self) -> np.ndarray:
         """
