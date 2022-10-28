@@ -1,11 +1,12 @@
-# Gdata version
-from bidict import bidict
-from tqdm import tqdm
-import os
-import numpy as np
-from math import floor
 from io import TextIOWrapper
-version = '0.1 alpha'
+from math import floor
+from tabnanny import verbose
+import numpy as np
+import os
+from tqdm import tqdm
+from bidict import bidict
+# Gdata version
+version = 'master'
 
 
 def element_dic(sym):
@@ -54,6 +55,7 @@ class Gdata():
         self.names = np.zeros(1, dtype=str)
         self.topologies = np.zeros(
             (1, self.max_atom, self.max_atom), dtype=int)
+        self.dipoles = np.zeros(1, dtype=float)
 
     """ PRIVATE """
 
@@ -61,7 +63,8 @@ class Gdata():
                      structures: np.ndarray = None,
                      charges: np.ndarray = None,
                      names: np.ndarray = None,
-                     topologies: np.ndarray = None) -> bool:
+                     topologies: np.ndarray = None,
+                     dipoles: np.ndarray = None) -> bool:
         """
         Check input data whether they match each other and the requirement
 
@@ -70,6 +73,7 @@ class Gdata():
             charges: array of charge data. type <np.ndarray>
             names: array of name data. type <np.ndarray>
             topologies: array of topology data. type <np.ndarray>
+            dipoles: array of dipole moment data. type <np.ndarray>
         Returns:
             check_result: if data pass check, return True. type <bool>
         """
@@ -111,6 +115,12 @@ class Gdata():
                 return False
             data_num.append(topologies.shape[0])
             max_atom.append(topologies.shape[1])
+
+        if type(dipoles) == np.ndarray:
+            if dipoles.ndim != 1:
+                print('Gdata: loaded names data dimension did not match requirement!')
+                return False
+            data_num.append(dipoles.shape[0])
 
         # check whether data have same data number and max_atom
         if data_num.count(data_num[0]) != len(data_num):
@@ -315,6 +325,7 @@ class Gdata():
         Returns:
             structure: coordinate strcture in log file. type <numpy.ndarray>
             charge: charge information in log file. type <numpy.ndarray>
+            dipole_moment: dipole moment in log file. type <float>
         """
 
         # read in whole file
@@ -330,6 +341,8 @@ class Gdata():
             if ((filelines[i].find('Mulliken charges:') != -1)
                     or (filelines[i].find('Mulliken charges and spin densities:') != -1)):
                 charge_loc = i
+            if (filelines[i].find('Dipole moment (field-independent basis, Debye):') != -1):
+                dipole_loc = i
 
         # read coordinate
         structure_temp = np.zeros((1, 4), dtype=float)
@@ -361,7 +374,13 @@ class Gdata():
             charge_temp, (0, self.max_atom-charge_temp.shape[0]))  # pad zeros
 
         file.seek(position, 0)  # move pointer back to original position
-        return structure_temp, charge_temp
+
+        # read dipole moment
+        line_temp = filelines[dipole_loc+1]
+        line_temp = line_temp.split()
+        dipole_temp = float(line_temp[7])
+
+        return structure_temp, charge_temp, dipole_temp
 
     """ PUBLIC """
 
@@ -416,7 +435,7 @@ class Gdata():
         """
         Pad zeros to thoes blank without data to fit in shape
 
-        Arges:
+        Args:
             None
         Returns:
             None
@@ -432,11 +451,22 @@ class Gdata():
         self.topologies = np.pad(
             self.topologies, ((0, data_num-self.topologies.shape[0]), (0, 0), (0, 0)))
 
+    def delete_dipole(self):
+        """
+        Delete all dipole moment info in class
+
+        Args:
+            None
+        Return:
+            None
+        """
+        self.dipoles = np.zeros(1, dtype=float)
+
     def delete_topologies(self):
         """
         Delete all topology data in calss
 
-        Arges:
+        Args:
             None
         Returns:
             None
@@ -448,7 +478,7 @@ class Gdata():
         """
         Delete all name data in calss
 
-        Arges:
+        Args:
             None
         Returns:
             None
@@ -459,7 +489,7 @@ class Gdata():
         """
         Delete all charge data in class
 
-        Arges:
+        Args:
             None
         Returns:
             None
@@ -470,7 +500,7 @@ class Gdata():
         """
         Delete all structure data in class
 
-        Arges:
+        Args:
             None
         Returns:
             None
@@ -839,6 +869,19 @@ class Gdata():
             print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
         file.close()
 
+    # get dipole moment info
+    def get_dipole(self) -> np.ndarray:
+        """
+        Output dipole moment
+
+        Args:
+            None
+        Return:
+            dipole: dipole moment information. type <numpy.ndarray>
+        """
+
+        return self.dipoles[1:]
+
     # get degree matrix
     def get_degree(self) -> np.ndarray:
         """
@@ -856,17 +899,18 @@ class Gdata():
 
         for data_num in range(adjacency.shape[0]):
             for rowcol in range(adjacency.shape[1]):
-                degree[data_num, rowcol, rowcol] = np.sum(adjacency[data_num, rowcol])
-        
+                degree[data_num, rowcol, rowcol] = np.sum(
+                    adjacency[data_num, rowcol])
+
         return degree
 
     # get adjacency matrix
-    def get_adjacency(self) -> np.ndarray:
+    def get_adjacency(self, self_loop: bool = False) -> np.ndarray:
         """
         Output adjacency for GCN
 
         Args:
-            None
+            self_loop: add self-bond to adjacency matrix. type <bool>
         Returns:
             adjacency: adjacency matrix for GCN. type <numpy.ndarray>
         """
@@ -881,22 +925,33 @@ class Gdata():
                         continue
                     adjacency[data_num, row, col] = 1
 
+        # add identity
+        if self_loop == True:
+            identity = np.zeros(adjacency.shape)
+            for data_num in range(adjacency.shape[0]):
+                for rowcol in range(adjacency.shape[1]):
+                    if np.sum(adjacency[data_num, rowcol]) != 0:
+                        identity[data_num, rowcol, rowcol] = 1
+            adjacency = adjacency + identity
+
         return adjacency
 
     # get topological data
-    def get_atom_info(self, matrix: bool = False) -> np.ndarray:
+    def get_atom_info(self, format: str = 'array') -> np.ndarray:
         """
         Output atom type in order
 
         Args:
-            matrix: if true, atom info will be reshape into matrix. type <bool>
+            format: output format. type <str>
+                'array': default value. output atomic number in array
+                'matrix': output atomic number in matrix
         Returns:
             atom_info: atomic number in array or matrix. type <numpy.ndarray>
         """
 
-        atom_info = self.structures[1:, :, 0]
+        atom_info = np.array(self.structures[1:, :, 0], dtype=int)
 
-        if matrix == True:
+        if format == 'matrix':
             atom_matrix = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=int)
             data_num = self.get_data_shape().max()
@@ -911,19 +966,29 @@ class Gdata():
 
             return atom_matrix[1:]
 
-        else:
+        elif format == 'array':
             return atom_info
 
-    def get_topologies(self) -> np.ndarray:
+    def get_topologies(self, self_loop: bool = False) -> np.ndarray:
         """
         Output stored topological data
 
         Args:
-            None
+            self_loop: add self loop to topology matrix. type <bool>
         Returns:
-            topologies: and array of topologies info. type <numpy.ndarray>
+            topologies: and matrix of topologies info. type <numpy.ndarray>
         """
-        return self.topologies[1:]
+        topologies = self.topologies[1:]
+
+        if self_loop == True:
+            identity = np.zeros(topologies.shape)
+            for data_num in range(topologies.shape[0]):
+                for rowcol in range(topologies.shape[1]):
+                    if np.sum(topologies[data_num, rowcol]) != 0:
+                        identity[data_num, rowcol, rowcol] = 1
+            topologies = topologies + identity
+
+        return topologies
 
     # get names data
 
@@ -989,15 +1054,18 @@ class Gdata():
              structure_name: str = None,
              charge_name: str = None,
              name_name: str = None,
-             topology_name: str = None):
+             topology_name: str = None,
+             dipole_name: str = None):
         """
-        Load saved structure, charge and name data from .npy file
+        Load saved structure, charge and name data from .npy file.
+        Warning: this will erase all exist data in class
 
         Args:
             structure_name: path and name of saved structure data. type <str>
             charge_name: path and name of saved charge data. type <str>
             name_name: path and name of saved name data. type <str>
             topology_name: path and name of saved topology data. type <str>
+            dipole_name: path and name of saved dipole moment data. type <str>
         Returns:
             None
         """
@@ -1021,15 +1089,21 @@ class Gdata():
             topologies = np.load(topology_name)
             max_atom = topologies.shape[1]
             data_num = topologies.shape[0]
+        if dipole_name != None:
+            dipoles = np.load(dipole_name)
+            data_num = dipoles.shape[0]
 
         # data check
         if self.__data_check(structures, charges, names, topologies) == True:
             # get max_atom
             self.max_atom = max_atom
+            # reinitialise value
             self.structures = np.zeros((1, self.max_atom, 4), dtype=float)
             self.charges = np.zeros((1, self.max_atom), dtype=float)
             self.topologies = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=int)
+            self.names = np.zeros(1, dtype=str)
+            self.dipoles = np.zeros(1, dtype=float)
             # mount data to class
             verbose_str = ''
             if structure_name != None:
@@ -1046,6 +1120,9 @@ class Gdata():
                 self.topologies = np.append(
                     self.topologies, topologies, axis=0)
                 verbose_str = verbose_str + ', ' + topology_name
+            if dipole_name != None:
+                self.dipoles = np.append(self.delete_dipole, dipoles)
+                verbose_str = verbose_str + ', ' + dipole_name
 
             verbose_str = verbose_str[2:]
 
@@ -1059,7 +1136,8 @@ class Gdata():
              structure_name: str = None,
              charge_name: str = None,
              name_name: str = None,
-             topology_name: str = None):
+             topology_name: str = None,
+             dipole_name: str = None):
         """
         Save data as numpy .npy data
 
@@ -1068,6 +1146,7 @@ class Gdata():
             charge_name: path and name of charge data. type <str>
             name_name: path and name of name data. type <str>
             topology_name: path and name of topology data. type <str>
+            dipole_name: path and name of dipole moment data. type <str>
         Returns:
             None
         """
@@ -1088,6 +1167,10 @@ class Gdata():
             topologies = self.topologies[1:]
             np.save(topology_name, topologies)
             verbose_str = verbose_str + ', ' + topology_name
+        if dipole_name != None:
+            dipoles = self.dipoles[1:]
+            np.save(dipole_name, dipoles)
+            verbose_str = verbose_str + ', ' + dipole_name
 
         verbose_str = verbose_str[2:]
         if self.verbose == True:
@@ -1098,7 +1181,7 @@ class Gdata():
     def read_log_dir(self, dir_name: str, validation=True):
         """
         Read Gaussian log files from directory and store in self.structure, 
-        self.charges and self.name
+        self.charges, self.name and self.dipoles
 
         Args:
             dir_name: path and name of directory. type <str>
@@ -1143,7 +1226,7 @@ class Gdata():
                         continue
 
                 try:
-                    structure, charge = self.__read_log(file)
+                    structure, charge, dipole = self.__read_log(file)
                 except:
                     print('Gdata: Fail to read file', full_name, 'Skipped!')
                     continue
@@ -1153,7 +1236,10 @@ class Gdata():
                     self.structures, [structure], axis=0)
                 # append this charge to list
                 self.charges = np.append(self.charges, [charge], axis=0)
+                # append this name to list
                 self.names = np.append(self.names, real_name)
+                # append this dipole to list
+                self.dipoles = np.append(self.dipoles, dipole)
                 file.close()
 
             print('Gdata:', file_num - fail_num,
@@ -1175,14 +1261,20 @@ class Gdata():
                     if self.__val__log(file) == False:
                         continue
 
-                structure, charge = self.__read_log(file)
+                try:
+                    structure, charge, dipole = self.__read_log(file)
+                except:
+                    continue
                 real_name = self.__find_real_name(file_name)
                 # append this structure to list
                 self.structures = np.append(
                     self.structures, [structure], axis=0)
                 # append this charge to list
                 self.charges = np.append(self.charges, [charge], axis=0)
+                # append this name to list
                 self.names = np.append(self.names, real_name)
+                # append this dipole to list
+                self.dipoles = np.append(self.dipoles, dipole)
                 file.close()
 
     # read single file
@@ -1190,7 +1282,7 @@ class Gdata():
     def read_log_file(self, file_name: str, validation=True):
         """
         Read single Gaussian log file store in self.structure, 
-        self.charges and self.name
+        self.charges, self.name and self.dipoles
 
         Args:
             file_name: path and name of Gaussian log file. type <str>
@@ -1211,13 +1303,16 @@ class Gdata():
                 raise
 
         # read data from file
-        structure, charge = self.__read_log(file)
+        structure, charge, dipole = self.__read_log(file)
         real_name = self.__find_real_name(file_name)
         # append this structure to list
         self.structures = np.append(self.structures, [structure], axis=0)
         # append this charge to list
         self.charges = np.append(self.charges, [charge], axis=0)
+        # append this name to list
         self.names = np.append(self.names, real_name)
+        # append this dipole moment to list
+        self.dipoles = np.append(self.dipoles, dipole)
         file.close()
 
         # verbose info
@@ -1230,6 +1325,7 @@ def gdata(max_atom=100,
           charges: np.ndarray = None,
           names: np.ndarray = None,
           topologies: np.ndarray = None,
+          dipoles: np.ndarray = None,
           verbose=True) -> Gdata:
     """
     Build Gdata dataframe
@@ -1240,6 +1336,7 @@ def gdata(max_atom=100,
         charges: array of charges distribution. type <numpy.ndarray>
         names: array of names of structures. type <numpy.ndarray>
         topologies: array of topological information. type <numpy.ndarray>
+        dipoles: array of dipole moments. type <numpy.ndarray>
         verbose: if True, all information will be printed out
     Returns:
         gd: generated Gdata dataframe
@@ -1255,6 +1352,8 @@ def gdata(max_atom=100,
         gd.names = np.append(gd.names, names)
     if type(topologies) == np.ndarray:
         gd.topologies = np.append(gd.topologies, topologies, axis=0)
+    if type(dipoles) == np.ndarray:
+        gd.dipoles = np.append(gd.dipoles, dipoles)
 
     if structures == charges == names == topologies == None:
         return gd
