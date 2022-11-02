@@ -1,6 +1,5 @@
 from io import TextIOWrapper
 from math import floor
-from tabnanny import verbose
 import numpy as np
 import os
 from tqdm import tqdm
@@ -388,7 +387,8 @@ class Gdata():
                  structure: np.ndarray = None,
                  charge: np.ndarray = None,
                  name: np.ndarray = None,
-                 topology: np.ndarray = None):
+                 topology: np.ndarray = None,
+                 dipole: np.ndarray = None):
         """
         Add single data to class
 
@@ -430,6 +430,8 @@ class Gdata():
             else:
                 print('Gdata: topology data dimension error!')
                 raise
+        if type(dipole) != type(None):
+            self.dipoles = np.append(self.dipoles, dipole)
 
     def pad_zeros(self):
         """
@@ -1405,12 +1407,14 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
     charge1 = Gdata1.get_charges()
     name1 = Gdata1.get_names()
     topology1 = Gdata1.get_topologies()
+    dipole1 = Gdata1.get_dipole()
     data_num_1 = Gdata1.get_data_shape().max()
 
     structure2 = Gdata2.get_structures()
     charge2 = Gdata2.get_charges()
     name2 = Gdata2.get_names()
     topology2 = Gdata2.get_topologies()
+    dipole2 = Gdata2.get_dipole()
     data_num_2 = Gdata2.get_data_shape().max()
 
     # compared name to merge
@@ -1448,16 +1452,24 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
             else:
                 topology_temp = topology1[loc1] + topology2[loc2]
 
+            # dipole
+            if np.array_equal(dipole1[loc1], dipole1[loc2]) == True:
+                dipole_temp = dipole1[loc1]
+            else:
+                dipole_temp = dipole1[loc1] + dipole2[loc2]
+            
+
             # remove item in data2
             structure2 = np.delete(structure2, loc2, axis=0)
             charge2 = np.delete(charge2, loc2, axis=0)
             name2 = np.delete(name2, loc2, axis=0)
             topology2 = np.delete(topology2, loc2, axis=0)
+            dipole2 = np.delete(dipole2, loc2, axis=0)
             # add in gdata_final
             Gdata_final.add_data(strcture_temp, charge_temp,
-                                 name_temp, topology_temp)
+                                 name_temp, topology_temp, dipole_temp)
 
     # add rest data to gdata final
-    Gdata_final.add_data(structure2, charge2, name2, topology2)
+    Gdata_final.add_data(structure2, charge2, name2, topology2, dipole2)
 
     return Gdata_final
