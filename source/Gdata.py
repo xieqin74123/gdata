@@ -38,32 +38,31 @@ def element_dic(sym):
 
 class Gdata():
 
-    def __init__(self, max_atom=100, verbose=True):
+    def __init__(self, charge_type='Mulliken', max_atom=100):
         """
         Gaussian data class.
 
         Args:
             max_atom: maximum allowed atoms in single molecule. type <int>
-            verbose: if True, infomation will be printed. type <bool>
         """
         # initialise structure, charge and name numpy array
         self.max_atom = max_atom
-        self.verbose = verbose
+        self.charge_type=charge_type
         self.structures = np.zeros((1, self.max_atom, 4), dtype=float)
         self.charges = np.zeros((1, self.max_atom), dtype=float)
         self.names = np.zeros(1, dtype=str)
         self.topologies = np.zeros(
             (1, self.max_atom, self.max_atom), dtype=int)
-        self.dipoles = np.zeros(1, dtype=float)
+        self.dipoles = np.zeros((1, 3), dtype=float)
 
     """ PRIVATE """
 
     def __data_check(self,
-                     structures: np.ndarray = None,
-                     charges: np.ndarray = None,
-                     names: np.ndarray = None,
-                     topologies: np.ndarray = None,
-                     dipoles: np.ndarray = None) -> bool:
+                     structures=None,
+                     charges=None,
+                     names=None,
+                     topologies=None,
+                     dipoles=None) -> bool:
         """
         Check input data whether they match each other and the requirement
 
@@ -80,7 +79,7 @@ class Gdata():
         data_num = []
         max_atom = []
 
-        if type(structures) == np.ndarray:
+        if structures is not None and structures.shape[0] != 0:
             if structures.ndim != 3:
                 print(
                     'Gdata: loaded structures data dimension did not match requirement!')
@@ -91,20 +90,20 @@ class Gdata():
             data_num.append(structures.shape[0])
             max_atom.append(structures.shape[1])
 
-        if type(charges) == np.ndarray:
+        if charges is not None and charges.shape[0] != 0:
             if charges.ndim != 2:
                 print('Gdata: loaded charges data dimension did not match requirement!')
                 return False
             data_num.append(charges.shape[0])
             max_atom.append(charges.shape[1])
 
-        if type(names) == np.ndarray:
+        if names is not None and names.shape[0] != 0:
             if names.ndim != 1:
                 print('Gdata: loaded names data dimension did not match requirement!')
                 return False
             data_num.append(names.shape[0])
 
-        if type(topologies) == np.ndarray:
+        if topologies is not None and topologies.shape[0] != 0:
             if topologies.ndim != 3:
                 print(
                     'Gdata: loaded topologies data dimension did not match requirement!')
@@ -115,8 +114,8 @@ class Gdata():
             data_num.append(topologies.shape[0])
             max_atom.append(topologies.shape[1])
 
-        if type(dipoles) == np.ndarray:
-            if dipoles.ndim != 1:
+        if dipoles is not None and dipoles.shape[0] != 0:
+            if dipoles.ndim != 2:
                 print('Gdata: loaded names data dimension did not match requirement!')
                 return False
             data_num.append(dipoles.shape[0])
@@ -149,12 +148,19 @@ class Gdata():
         file_lines = file.readlines()
         lines_num = len(file_lines)
 
+        coordinate_start = 0
+
         # find coordinate start and stop
         for i in range(lines_num):
             if file_lines[i].find('No Title Specified') != -1:
                 coordinate_start = i + 3    # skip extra 3 lines
                 break
 
+        # if no coordinate found
+        if coordinate_start == 0:
+            raise
+
+        coordinate_end = coordinate_start
         for i in range(coordinate_start, lines_num):
             if file_lines[i] == '\n':
                 coordinate_end = i
@@ -216,16 +222,13 @@ class Gdata():
                 break
             else:
                 # print elements
-                print(element_dic(coordinate[i][0]),  # convert back to symbol
-                      "%f" % coordinate[i][1],
-                      "%f" % coordinate[i][2],
-                      "%f" % coordinate[i][3],
-                      file=file)
+                print('%c %f %f %f' % (element_dic(
+                    coordinate[i][0]), coordinate[i][1], coordinate[i][2], coordinate[i][3]), file=file)
         return atom_num
 
     # xyz reader
 
-    def __read_xyz(self, file: TextIOWrapper) -> np.ndarray:
+    def __read_xyz(self, file: TextIOWrapper, header=True) -> np.ndarray:
         """
         Read coordinate from .xyz file
 
@@ -240,9 +243,14 @@ class Gdata():
 
         file_lines = file.readlines()
 
+        if header is True:
+            start_line = 2
+        else:
+            start_line = 0
+
         # read XYZ coordinate
         coor_temp = np.zeros((1, 4), dtype=float)
-        for i in range(2, len(file_lines)):
+        for i in range(start_line, len(file_lines)):  # skip first two lines
             line_temp = file_lines[i].split()
             # convert element sym to num
             line_temp[0] = element_dic(line_temp[0])
@@ -332,6 +340,11 @@ class Gdata():
         file.seek(0, 0)  # move to start of file
         filelines = file.readlines()
         line_max = len(filelines)
+        
+        structure_loc = None
+        Mcharge_loc = None
+        dipole_loc = None
+        Hcharge_loc = None
 
         # find coordinate and charge location in file
         for i in range(line_max):
@@ -339,9 +352,11 @@ class Gdata():
                 structure_loc = i
             if ((filelines[i].find('Mulliken charges:') != -1)
                     or (filelines[i].find('Mulliken charges and spin densities:') != -1)):
-                charge_loc = i
+                Mcharge_loc = i
             if (filelines[i].find('Dipole moment (field-independent basis, Debye):') != -1):
                 dipole_loc = i
+            if (filelines[i].find('Hirshfeld charges, spin densities, dipoles, and CM5 charges') != -1):
+                Hcharge_loc = i
 
         # read coordinate
         structure_temp = np.zeros((1, 4), dtype=float)
@@ -358,27 +373,49 @@ class Gdata():
             0, self.max_atom-structure_temp.shape[0]), (0, 0)))    # pad rest space with zero
 
         # read mulliken charge
-        charge_temp = np.zeros(1, dtype=float)
-        for i in range(charge_loc+2, line_max):  # skip extra 2 lines
-            line_temp = filelines[i]
-            if line_temp.find('Sum of Mulliken charges') != -1:
-                break
-            line_temp = line_temp.split()
-            line_temp[1] = element_dic(line_temp[1])
-            line_temp = np.array(line_temp, dtype=float)
-            line_temp = np.delete(line_temp, [0, 1])   # delete useless data
-            charge_temp = np.append(charge_temp, line_temp, axis=0)
-        charge_temp = charge_temp[1:]
-        charge_temp = np.pad(
-            charge_temp, (0, self.max_atom-charge_temp.shape[0]))  # pad zeros
+        if self.charge_type == 'Mulliken':
+            charge_temp = np.zeros(1, dtype=float)
+            for i in range(Mcharge_loc+2, line_max):  # skip extra 2 lines
+                line_temp = filelines[i]
+                if line_temp.find('Sum of Mulliken charges') != -1:
+                    break
+                line_temp = line_temp.split()
+                line_temp[1] = element_dic(line_temp[1])
+                line_temp = np.array(line_temp, dtype=float)
+                line_temp = np.delete(line_temp, [0, 1])   # delete useless data
+                charge_temp = np.append(charge_temp, line_temp, axis=0)
+            charge_temp = charge_temp[1:]
+            charge_temp = np.pad(
+                charge_temp, (0, self.max_atom-charge_temp.shape[0]))  # pad zeros
 
-        file.seek(position, 0)  # move pointer back to original position
+        # read hirshfeld charge
+        elif self.charge_type == 'Hirshfeld':
+            if Hcharge_loc is None:
+                raise ValueError('No Hirshfeld charge founded here!')
+            charge_temp = np.zeros(1, dtype=float)
+            for i in range(Hcharge_loc+2, line_max):
+                line_temp = filelines[i]
+                if line_temp.find('Tot') != -1:
+                    break
+                line_temp = line_temp.split()
+                line_temp[1] = element_dic(line_temp[1])
+                line_temp = np.array(line_temp, dtype=float)
+                line_temp = line_temp[2, np.newaxis]
+                charge_temp = np.append(charge_temp, line_temp, axis=0)
+            charge_temp = charge_temp[1:]
+            charge_temp = np.pad(
+                charge_temp, (0, self.max_atom-charge_temp.shape[0]))  # pad zeros
 
         # read dipole moment
         line_temp = filelines[dipole_loc+1]
         line_temp = line_temp.split()
-        dipole_temp = float(line_temp[7])
+        dipole_temp = []
+        dipole_temp.append(float(line_temp[1]))
+        dipole_temp.append(float(line_temp[3]))
+        dipole_temp.append(float(line_temp[5]))
+        dipole_temp = np.array(dipole_temp, dtype=float)
 
+        file.seek(position, 0)  # move pointer back to original position
         return structure_temp, charge_temp, dipole_temp
 
     """ PUBLIC """
@@ -430,8 +467,13 @@ class Gdata():
             else:
                 print('Gdata: topology data dimension error!')
                 raise
-        if type(dipole) != type(None):
-            self.dipoles = np.append(self.dipoles, dipole)
+        if type(dipole) == np.ndarray:
+            if dipole.ndim == 1:
+                self.dipoles = np.append(self.dipoles, [dipole], axis=0)
+            elif dipole.ndim == 2:
+                self.dipoles = np.append(self.dipoles, dipole, axis=0)
+            else:
+                print('Gdata: dipole moment data dimension error!') 
 
     def pad_zeros(self):
         """
@@ -443,7 +485,7 @@ class Gdata():
             None
         """
 
-        data_num = self.get_data_shape().max() + 1
+        data_num = self.get_data_shape()[0] + 1
 
         self.structures = np.pad(
             self.structures, ((0, data_num-self.structures.shape[0]), (0, 0), (0, 0)))
@@ -452,6 +494,7 @@ class Gdata():
         self.names = np.pad(self.names, (0, data_num-self.names.shape[0]))
         self.topologies = np.pad(
             self.topologies, ((0, data_num-self.topologies.shape[0]), (0, 0), (0, 0)))
+        self.dipoles = np.pad(self.dipoles, ((0, data_num-self.dipoles.shape[0]), (0, 0)))
 
     def delete_dipole(self):
         """
@@ -462,7 +505,7 @@ class Gdata():
         Return:
             None
         """
-        self.dipoles = np.zeros(1, dtype=float)
+        self.dipoles = np.zeros((1, 3), dtype=float)
 
     def delete_topologies(self):
         """
@@ -548,6 +591,7 @@ class Gdata():
         charges = None
         names = None
         topologies = None
+        dipoles = None
 
         if self.structures.shape[0] != 1:
             structures = self.structures[1:]
@@ -557,8 +601,10 @@ class Gdata():
             names = self.names[1:]
         if self.topologies.shape[0] != 1:
             topologies = self.topologies[1:]
+        if self.dipoles.shape[0] != 1:
+            dipoles = self.dipoles[1:]
 
-        return self.__data_check(structures, charges, names, topologies)
+        return self.__data_check(structures, charges, names, topologies, dipoles)
 
     # read zmat files from directory
 
@@ -578,39 +624,49 @@ class Gdata():
 
         file_list = os.listdir(dir_name)
 
-        # verbose run
-        if self.verbose == True:
+        file_num = len(file_list)
+        io_error_names = []
+        content_error_names = []
 
-            file_num = len(file_list)
-            fail_num = 0
-            print('Gdata: Start reading zmat data from', dir_name)
-            for file_name in tqdm(file_list):
-                full_name = dir_name + file_name    # conbine name
+        print('Gdata: Start reading zmat data from %s' % (dir_name))
+        for file_name in tqdm(file_list):
+            full_name = dir_name + file_name    # conbine name
 
-                # skip wrong file
-                try:
-                    file = open(full_name, 'r')
-                except:
-                    print('Gdata: Fail to open file', full_name, 'Skipped!')
-                    fail_num = fail_num + 1
-                    continue
+            # skip wrong file
+            try:
+                file = open(full_name, 'r')
+            except:
+                io_error_names.append(full_name)
+                continue
 
-                try:
-                    coordinate, topology = self.__read_zmat(file)
-                except:
-                    print('Gdata: Fail to read file', full_name, 'Skipped!')
-                    continue
-                real_name = self.__find_real_name(file_name)
-                # append this structure to list
-                self.structures = np.append(
-                    self.structures, [coordinate], axis=0)
-                self.topologies = np.append(
-                    self.topologies, [topology], axis=0)
-                self.names = np.append(self.names, real_name)
-                file.close()
+            try:
+                coordinate, topology = self.__read_zmat(file)
+            except:
+                content_error_names.append(full_name)
+                continue
 
-            print('Gdata:', file_num - fail_num,
-                  'zmat files read successfully!', fail_num, 'failed')
+            real_name = self.__find_real_name(file_name)
+            # append this structure to list
+            self.structures = np.append(
+                self.structures, [coordinate], axis=0)
+            self.topologies = np.append(
+                self.topologies, [topology], axis=0)
+            self.names = np.append(self.names, real_name)
+            file.close()
+
+        io_error_num = len(io_error_names)
+        content_error_num = len(content_error_names)
+        error_num = io_error_num + content_error_num
+
+        print('Gdata: %d zmat files read successfully! %d failed!' %
+              (file_num-error_num, error_num))
+
+        if io_error_num != 0:
+            print('Gdata: %d operations failed due to IO errors, which are: \n %s.' % (
+                io_error_num, io_error_names))
+        if content_error_num != 0:
+            print('Gdata: %d operations failed due to invalid contents in input files, which are: \n %s.' % (
+                content_error_num, content_error_names))
 
     # read single zmat file
 
@@ -626,10 +682,14 @@ class Gdata():
         try:
             file = open(file_name, 'r')
         except:
-            print('Gdata: fail to open file', file_name)
-            return -1
+            print('Gdata: operation failed due to IO errors')
+            raise
 
-        structure, topology = self.__read_zmat(file)
+        try:
+            structure, topology = self.__read_zmat(file)
+        except:
+            print('Gdata: operation failed due to invalid contents in input file.')
+            raise
 
         real_name = self.__find_real_name(file_name)
 
@@ -639,9 +699,7 @@ class Gdata():
         self.topologies = np.append(self.topologies, [topology], axis=0)
         file.close()
 
-        # verbose info
-        if self.verbose == True:
-            print('Gdata: com file successfully read:', file_name)
+        print('Gdata: zmat file read successfully: %s' % file_name)
 
     # minimise max_atom number
 
@@ -672,9 +730,7 @@ class Gdata():
             self.topologies = self.topologies[:, :max_atom_num, :max_atom_num]
         finally:
             self.max_atom = max_atom_num
-            if self.verbose == True:
-                print(
-                    'Gdata: number of maximum allowed atom has been minimised to', max_atom_num)
+            print('Gdata: number of maximum allowed atom has been minimised to %d' % (max_atom_num))
 
     # convert to xyz
 
@@ -703,54 +759,36 @@ class Gdata():
 
         data_num = self.get_data_shape()[0]
 
-        # verbose mode
-        if self.verbose == True:
-            fail_num = 0
+        fail_names = []
 
-            # write xyz
-            for i in tqdm(range(data_num)):
-                full_name = directory + names[i] + '.xyz'
+        # write xyz
+        print('Gdata: Start writing xyz files...')
+        for i in tqdm(range(data_num)):
+            file_name = names[i] + '.xyz'
+            full_name = directory + file_name
+            try:
+                file = open(full_name, 'w+')
+            except:
+                fail_names.append(file_name)
+                continue
 
-                try:
-                    file = open(full_name, 'w+')
-                except:
-                    fail_num = fail_num + 1
-                    print('Gdata: Fail to create file', full_name, 'Skipped!')
-                    continue
+            atom_num = self.__write_xyz(file, structures[i])
 
-                atom_num = self.__write_xyz(file, structures[i])
-
-                # print header
-                if header == True:
-                    file.seek(0, 0)
-                    file_lines = file.readlines()
-                    header_line = str(atom_num) + '\n\n'
-                    file_lines.insert(0, header_line)
-                    file.seek(0, 0)
-                    file.writelines(file_lines)
-
+            # print header
+            if header == True:
+                file.seek(0, 0)
+                file_lines = file.readlines()
+                header_line = str(atom_num) + '\n\n'
+                file_lines.insert(0, header_line)
+                file.seek(0, 0)
+                file.writelines(file_lines)
                 file.close()
-            print('Gdata:', data_num - fail_num,
-                  'xyz files write successfully!', fail_num, 'failed')
 
-        # quite mode
-        else:
-            for i in range(data_num):
-                full_name = directory + names[i] + '.xyz'
-
-                try:
-                    file = open(full_name, 'w')
-                except:
-                    continue
-
-                atom_num = self.__write_xyz(file, structures[i])
-
-                # print header
-                if header == True:
-                    file.seek(0, 0)
-                    print(atom_num, '\n', file=file)
-
-                file.close()
+        fail_num = len(fail_names)
+        print('Gdata: %d xyz files writed successfully!' % (data_num-fail_num))
+        if fail_num != 0:
+            print('Gdata: %d operations failed due to IO errors, which are: \n%s' % (
+                fail_num, fail_names))
 
     def get_data_shape(self) -> np.ndarray:
         """
@@ -775,7 +813,7 @@ class Gdata():
 
     # read xyz files from dir
 
-    def read_xyz_dir(self, dir_name: str):
+    def read_xyz_dir(self, dir_name: str, header=True):
         """
         Read all xyz files in the directory. Sotre in self.structures and self.names
 
@@ -792,64 +830,39 @@ class Gdata():
 
         file_list = os.listdir(dir_name)
 
-        # verbose run
-        if self.verbose == True:
+        file_num = len(file_list)
+        fail_num = 0
+        print('Gdata: Start reading xyz data from', dir_name)
+        for file_name in tqdm(file_list):
+            full_name = dir_name + file_name    # conbine name
 
-            file_num = len(file_list)
-            fail_num = 0
-            print('Gdata: Start reading xyz data from', dir_name)
-            for file_name in tqdm(file_list):
-                full_name = dir_name + file_name    # conbine name
+            # skip wrong file
+            try:
+                file = open(full_name, 'r')
+            except:
+                print('Gdata: Fail to open file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
 
-                # skip wrong file
-                try:
-                    file = open(full_name, 'r')
-                except:
-                    print('Gdata: Fail to open file', full_name, 'Skipped!')
-                    fail_num = fail_num + 1
-                    continue
+            try:
+                coordinate = self.__read_xyz(file, header)
+            except:
+                print('Gdata: Fail to read file', full_name, 'Skipped!')
+                continue
+            real_name = self.__find_real_name(file_name)
+            # append this structure to list
+            self.structures = np.append(
+                self.structures, [coordinate], axis=0)
+            self.names = np.append(self.names, real_name)
+            file.close()
 
-                try:
-                    coordinate = self.__read_xyz(file)
-                except:
-                    print('Gdata: Fail to read file', full_name, 'Skipped!')
-                    continue
-                real_name = self.__find_real_name(file_name)
-                # append this structure to list
-                self.structures = np.append(
-                    self.structures, [coordinate], axis=0)
-                self.names = np.append(self.names, real_name)
-                file.close()
-
-            print('Gdata:', file_num - fail_num,
-                  'xyz files read successfully!', fail_num, 'failed')
-            print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
-
-        # quiet run
-        else:
-            for file_name in file_list:
-                full_name = dir_name + file_name
-
-                # skip wrong file
-                try:
-                    file = open(full_name, 'r')
-                except:
-                    continue
-
-                try:
-                    coordinate = self.__read_log(file)
-                except:
-                    continue
-                real_name = self.__find_real_name(file_name)
-                # append this structure to list
-                self.structures = np.append(
-                    self.structures, [coordinate], axis=0)
-                self.names = np.append(self.names, real_name)
-                file.close()
+        print('Gdata:', file_num - fail_num,
+                'xyz files read successfully!', fail_num, 'failed')
+        print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
 
     # read single xyz file
 
-    def read_xyz_file(self, file_name: str):
+    def read_xyz_file(self, file_name: str, header=True):
         """
         Read single xyz file and store in self.structure and self.name
 
@@ -860,29 +873,33 @@ class Gdata():
         """
 
         file = open(file_name, 'r')
-        coordinate = self.__read_xyz(file)
+        coordinate = self.__read_xyz(file, header)
         self.structures = np.append(self.structures, [coordinate], axis=0)
 
         real_name = self.__find_real_name(file_name)
         self.names = np.append(self.names, real_name)
 
-        if self.verbose == True:
-            print('Gdata: xyz file successfully read:', file_name)
-            print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
+        print('Gdata: xyz file successfully read:', file_name)
+        print('Gdata: Warning: Reading xyz files cannot obtain charge information.')
         file.close()
 
     # get dipole moment info
-    def get_dipole(self) -> np.ndarray:
+    def get_dipole(self, style:str='norm') -> np.ndarray:
         """
         Output dipole moment
 
         Args:
-            None
+            style: select output style. <str>
+                    norm: output the norm of dipole moment
+                    xyz: output dipole in x, y and z directions
+                    ivec:
         Return:
             dipole: dipole moment information. type <numpy.ndarray>
         """
-
-        return self.dipoles[1:]
+        if style == 'xyz':
+            return self.dipoles[1:]
+        elif style == 'norm':
+            return np.linalg.norm(self.dipoles[1:], axis=1)
 
     # get degree matrix
     def get_degree(self) -> np.ndarray:
@@ -1075,6 +1092,7 @@ class Gdata():
         charges = None
         names = None
         topologies = None
+        dipoles = None
 
         if structure_name != None:
             structures = np.load(structure_name)
@@ -1096,7 +1114,7 @@ class Gdata():
             data_num = dipoles.shape[0]
 
         # data check
-        if self.__data_check(structures, charges, names, topologies) == True:
+        if self.__data_check(structures, charges, names, topologies, dipoles) == True:
             # get max_atom
             self.max_atom = max_atom
             # reinitialise value
@@ -1105,7 +1123,7 @@ class Gdata():
             self.topologies = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=int)
             self.names = np.zeros(1, dtype=str)
-            self.dipoles = np.zeros(1, dtype=float)
+            self.dipoles = np.zeros((1, 3), dtype=float)
             # mount data to class
             verbose_str = ''
             if structure_name != None:
@@ -1123,13 +1141,12 @@ class Gdata():
                     self.topologies, topologies, axis=0)
                 verbose_str = verbose_str + ', ' + topology_name
             if dipole_name != None:
-                self.dipoles = np.append(self.delete_dipole, dipoles)
+                self.dipoles = np.append(self.delete_dipole, dipoles, axis=0)
                 verbose_str = verbose_str + ', ' + dipole_name
 
             verbose_str = verbose_str[2:]
 
-            if self.verbose == True:
-                print('Gdata:', data_num, 'data loaded and validated.',
+            print('Gdata:', data_num, 'data loaded and validated.',
                       'Maximum allowed atom changed to', self.max_atom)
 
     # save data as npy
@@ -1175,8 +1192,7 @@ class Gdata():
             verbose_str = verbose_str + ', ' + dipole_name
 
         verbose_str = verbose_str[2:]
-        if self.verbose == True:
-            print('Gdata: Data saved as: ', verbose_str)
+        print('Gdata: Data saved as: ', verbose_str)
 
     # read files in dir
 
@@ -1201,83 +1217,49 @@ class Gdata():
 
         file_list = os.listdir(dir_name)
 
-        # verbose run
-        if self.verbose == True:
+        file_num = len(file_list)
+        fail_num = 0
+        print('Gdata: Start reading log data from', dir_name)
+        for file_name in tqdm(file_list):
+            full_name = dir_name + file_name    # conbine name
 
-            file_num = len(file_list)
-            fail_num = 0
-            print('Gdata: Start reading log data from', dir_name)
-            for file_name in tqdm(file_list):
-                full_name = dir_name + file_name    # conbine name
+            # skip wrong file
+            try:
+                file = open(full_name, 'r')
+            except:
+                print('Gdata: Fail to open file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
 
-                # skip wrong file
-                try:
-                    file = open(full_name, 'r')
-                except:
-                    print('Gdata: Fail to open file', full_name, 'Skipped!')
+            # validate file and skip bad file
+            if validation == True:
+                if self.__val__log(file) == False:
+                    print('Gdata: file', file_name,
+                            'did not pass validation! Skipped!')
                     fail_num = fail_num + 1
+                    file.close()
                     continue
 
-                # validate file and skip bad file
-                if validation == True:
-                    if self.__val__log(file) == False:
-                        print('Gdata: file', file_name,
-                              'did not pass validation! Skipped!')
-                        fail_num = fail_num + 1
-                        file.close()
-                        continue
+            try:
+                structure, charge, dipole = self.__read_log(file)
+            except:
+                print('Gdata: Fail to read file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
+            real_name = self.__find_real_name(file_name)
+            # append this structure to list
+            self.structures = np.append(
+                self.structures, [structure], axis=0)
+            # append this charge to list
+            self.charges = np.append(self.charges, [charge], axis=0)
+            # append this name to list
+            self.names = np.append(self.names, real_name)
+            # append this dipole to list
+            self.dipoles = np.append(self.dipoles, [dipole], axis=0)
+            file.close()
 
-                try:
-                    structure, charge, dipole = self.__read_log(file)
-                except:
-                    print('Gdata: Fail to read file', full_name, 'Skipped!')
-                    continue
-                real_name = self.__find_real_name(file_name)
-                # append this structure to list
-                self.structures = np.append(
-                    self.structures, [structure], axis=0)
-                # append this charge to list
-                self.charges = np.append(self.charges, [charge], axis=0)
-                # append this name to list
-                self.names = np.append(self.names, real_name)
-                # append this dipole to list
-                self.dipoles = np.append(self.dipoles, dipole)
-                file.close()
-
-            print('Gdata:', file_num - fail_num,
-                  'log files read successfully!', fail_num, 'failed')
-
-        # quiet run
-        else:
-            for file_name in file_list:
-                full_name = dir_name + file_name
-
-                # skip wrong file
-                try:
-                    file = open(full_name, 'r')
-                except:
-                    continue
-
-                # validate file and skip bad file
-                if validation == True:
-                    if self.__val__log(file) == False:
-                        continue
-
-                try:
-                    structure, charge, dipole = self.__read_log(file)
-                except:
-                    continue
-                real_name = self.__find_real_name(file_name)
-                # append this structure to list
-                self.structures = np.append(
-                    self.structures, [structure], axis=0)
-                # append this charge to list
-                self.charges = np.append(self.charges, [charge], axis=0)
-                # append this name to list
-                self.names = np.append(self.names, real_name)
-                # append this dipole to list
-                self.dipoles = np.append(self.dipoles, dipole)
-                file.close()
+        print('Gdata:', file_num - fail_num,
+                'log files read successfully!', fail_num, 'failed')
 
     # read single file
 
@@ -1314,21 +1296,21 @@ class Gdata():
         # append this name to list
         self.names = np.append(self.names, real_name)
         # append this dipole moment to list
-        self.dipoles = np.append(self.dipoles, dipole)
+        self.dipoles = np.append(self.dipoles, [dipole], axis=0)
         file.close()
 
-        # verbose info
-        if self.verbose == True:
-            print('Gdata: log file successfully read:', file_name)
+
+        print('Gdata: log file successfully read:', file_name)
 
 
 def gdata(max_atom=100,
+          charge_type = 'Mulliken',
           structures: np.ndarray = None,
           charges: np.ndarray = None,
           names: np.ndarray = None,
           topologies: np.ndarray = None,
           dipoles: np.ndarray = None,
-          verbose=True) -> Gdata:
+        ) -> Gdata:
     """
     Build Gdata dataframe
 
@@ -1339,11 +1321,10 @@ def gdata(max_atom=100,
         names: array of names of structures. type <numpy.ndarray>
         topologies: array of topological information. type <numpy.ndarray>
         dipoles: array of dipole moments. type <numpy.ndarray>
-        verbose: if True, all information will be printed out
     Returns:
         gd: generated Gdata dataframe
     """
-    gd = Gdata(max_atom=max_atom, verbose=verbose)
+    gd = Gdata(max_atom=max_atom, charge_type=charge_type)
 
     # data store
     if type(structures) == np.ndarray:
@@ -1355,7 +1336,7 @@ def gdata(max_atom=100,
     if type(topologies) == np.ndarray:
         gd.topologies = np.append(gd.topologies, topologies, axis=0)
     if type(dipoles) == np.ndarray:
-        gd.dipoles = np.append(gd.dipoles, dipoles)
+        gd.dipoles = np.append(gd.dipoles, dipoles, axis=0)
 
     if structures == charges == names == topologies == None:
         return gd
@@ -1386,8 +1367,6 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
         raise
 
     # initialise class
-    Gdata1.verbose = False
-    Gdata2.verbose = False
 
     Gdata1.minimise()
     Gdata2.minimise()
@@ -1407,14 +1386,14 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
     charge1 = Gdata1.get_charges()
     name1 = Gdata1.get_names()
     topology1 = Gdata1.get_topologies()
-    dipole1 = Gdata1.get_dipole()
+    dipole1 = Gdata1.get_dipole(style='xyz')
     data_num_1 = Gdata1.get_data_shape().max()
 
     structure2 = Gdata2.get_structures()
     charge2 = Gdata2.get_charges()
     name2 = Gdata2.get_names()
     topology2 = Gdata2.get_topologies()
-    dipole2 = Gdata2.get_dipole()
+    dipole2 = Gdata2.get_dipole(style='xyz')
     data_num_2 = Gdata2.get_data_shape().max()
 
     # compared name to merge
@@ -1437,27 +1416,51 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
             # structure
             if np.array_equal(structure1[loc1], structure2[loc2]) == True:
                 strcture_temp = structure1[loc1]
-            else:
+            elif np.count_nonzero(structure1[loc1]) * np.count_nonzero(structure2[loc2]) == 0:
                 strcture_temp = structure1[loc1] + structure2[loc2]
+            else:
+                print('Gdata: Conflict found between two sets of data.')
+                print('Gdata: Structure data conflict in %s' % (name1[loc1]))
+                print('Gdata: Data in first data set: \n', structure1[loc1], sep='')
+                print('Gdata: Data in Second data set: \n', structure2[loc2], sep='')
+                raise
 
             # charge
             if np.array_equal(charge1[loc1], charge2[loc2]) == True:
                 charge_temp = charge1[loc1]
-            else:
+            elif np.count_nonzero(charge1[loc1]) * np.count_nonzero(charge2[loc2]) == 0:
                 charge_temp = charge1[loc1] + charge2[loc2]
+            else:
+                print('Gdata: Conflict found between two sets of data.')
+                print('Gdata: Charge data conflict in %s' % (name1[loc1]))
+                print('Gdata: Data in first data set: \n', charge1[loc1], sep='')
+                print('Gdata: Data in Second data set: \n', charge2[loc2], sep='')
+                raise
 
             # topology
             if np.array_equal(topology1[loc1], topology2[loc2]) == True:
                 topology_temp = topology1[loc1]
-            else:
+            elif np.count_nonzero(topology1[loc1]) * np.count_nonzero(topology2[loc2]) == 0:
                 topology_temp = topology1[loc1] + topology2[loc2]
+            else:
+                print('Gdata: Conflict found between two sets of data.')
+                print('Gdata: Topology data conflict in %s' % (name1[loc1]))
+                print('Gdata: Data in first data set: \n', topology1[loc1], sep='')
+                print('Gdata: Data in Second data set: \n', topology2[loc2], sep='')
+                raise
+            
 
             # dipole
             if np.array_equal(dipole1[loc1], dipole1[loc2]) == True:
                 dipole_temp = dipole1[loc1]
-            else:
+            elif np.count_nonzero(dipole1[loc1]) * np.count_nonzero(dipole2[loc2]) == 0:
                 dipole_temp = dipole1[loc1] + dipole2[loc2]
-            
+            else:
+                print('Gdata: Conflict found between two sets of data.')
+                print('Gdata: Dipole moment data conflict in %s' % (name1[loc1]))
+                print('Gdata: Data in first data set: \n', dipole1[loc1], sep='')
+                print('Gdata: Data in Second data set: \n', dipole2[loc2], sep='')
+                raise
 
             # remove item in data2
             structure2 = np.delete(structure2, loc2, axis=0)
