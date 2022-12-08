@@ -77,6 +77,7 @@ def gdata_manu_title (selected_data: int):
     print('6 \t - \t Save Data as .npy')
     print('7 \t - \t Laod .npy Data')
     print('8 \t - \t Manage .xyz Structure Data')
+    print('9 \t - \t Convert to MI Based Coordinates')
 
     # information
     print('INFORMATION:')
@@ -152,6 +153,13 @@ def gdata_manu (selected_data: int):
             gdata_manu_title(selected_data)
         elif ucommand == 8:     # manage xyz
             manage_xyz(selected_data)
+            gdata_manu_title(selected_data)
+        elif ucommand == 9:
+            try:
+                gdata_list[selected_data].convert_to_mi_coordinate()
+            except Exception as e:
+                print(e)
+            input_command('Press Enter to Continue', numeric_check=False)
             gdata_manu_title(selected_data)
         # advanced operations
         elif ucommand == -999:
