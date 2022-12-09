@@ -36,8 +36,10 @@ def element_dic(sym) -> str or int:
     else:
         return atomic_number.inverse[sym]
 
-def atom_mass_dic (sym) -> float:
+def atom_mass_dict(sym) -> float:
     """
+    One way dictionary from atom type to atomic mass
+
     Args:
         sym: atomic number or symbol. type <int>, <float> or <str>
     Returns:
@@ -67,6 +69,14 @@ def atom_mass_dic (sym) -> float:
     return atom_weight[1:]
 
 def vec_normalise(vec: np.ndarray) -> np.ndarray:
+    """
+    Normalise a vector
+
+    Args:
+        vec: vector to be nomalised. type <numpy.ndarray>
+    Returns:
+        n_vec: normalised vector. type <numpy.ndarray>
+    """
     norm = np.linalg.norm(vec)
     if norm == 0:
         return vec
@@ -77,9 +87,11 @@ class Gdata():
 
     def __init__(self, charge_type='Mulliken', max_atom=100):
         """
-        Gaussian data class.
+        Initialise Gdata class.
 
         Args:
+            charge_type: define the charge type used in this Gdata class. type <str>
+                Alternative: Hirshfeld, Mulliken
             max_atom: maximum allowed atoms in single molecule. type <int>
         """
         # initialise structure, charge and name numpy array
@@ -271,6 +283,7 @@ class Gdata():
 
         Args:
             file: opened xyz file. type <_io.TextIOWrapper>
+            hearder: indicate whether the reading xyz file contain header or not. type <bool>
         Returns:
             coordinate: structural coordinate from xyz file. type <numpy.ndarray>
         """
@@ -460,6 +473,7 @@ class Gdata():
         """
         Convert input coordinates to moment of inertial tensor eigen vector based unified coordinates. 
         Warning: This will overwrite existing structure data
+        
         Args:
             None
         Returns:
@@ -487,7 +501,8 @@ class Gdata():
 
     def get_moment_of_inertia_tensor(self) -> np.ndarray:
         """
-        Ouput moment of inertial tensor of all these molecule
+        Ouput moment of inertial tensor of all these molecules
+
         Args:
             None
         Returns:
@@ -554,7 +569,7 @@ class Gdata():
         """
         atom_info = self.get_atom_info()
         a_shape = atom_info.shape
-        atom_weight = np.reshape(atom_mass_dic(atom_info.flatten()), a_shape)
+        atom_weight = np.reshape(atom_mass_dict(atom_info.flatten()), a_shape)
         return atom_weight
 
 
@@ -576,20 +591,20 @@ class Gdata():
         return m_centre
 
     def add_data(self,
-                 structure: np.ndarray = None,
-                 charge: np.ndarray = None,
-                 name: np.ndarray = None,
-                 topology: np.ndarray = None,
-                 dipole: np.ndarray = None):
+                 structure: np.ndarray=None,
+                 charge: np.ndarray=None,
+                 name: np.ndarray=None,
+                 topology: np.ndarray=None,
+                 dipole: np.ndarray=None):
         """
-        Add single data to class
+        Add data to class manully
 
         Args:
-            max_atom: maximum allowed atom in each structure. type <int>
-            structures: array of structural coordinates. type <numpy.ndarray>
-            charges: array of charges distribution. type <numpy.ndarray>
-            names: array of names of structures. type <numpy.ndarray>
-            topologies: array of topological information. type <numpy.ndarray>
+            structure: array of structural coordinates. type <numpy.ndarray>
+            charge: array of charges distribution. type <numpy.ndarray>
+            name: array of names of structures. type <numpy.ndarray>
+            topology: array of topological information. type <numpy.ndarray>
+            dipole: array of dipole moment data. type <numpy.ndarray>
         Returns:
             None
         """
@@ -740,7 +755,7 @@ class Gdata():
         Args:
             None
         Return:
-            check_result: if True, data has passed the check
+            check_result: if True, data has passed the check. type <bool>
         """
         structures = None
         charges = None
@@ -860,7 +875,7 @@ class Gdata():
 
     def minimise(self):
         """
-        delete redundant '0' atoms to minimise the shape of array
+        Reduce maximum allowed atom to minimise the shape of array
 
         Args:
             None
@@ -947,12 +962,12 @@ class Gdata():
 
     def get_data_shape(self) -> np.ndarray:
         """
-        Get number of data stored in class, for structures, charges and names
+        Get number of data stored in class, for structures, charges, names, topologies and dipole moments
 
         Args:
             None
         Return:
-            shape_array: an array of shape in order of [structures, charges, names, topologies].
+            shape_array: an array of shape in order of [structures, charges, names, topologies, dipole moments].
                          type <numpy.ndarray>
         """
 
@@ -960,9 +975,10 @@ class Gdata():
         charge_shape = self.charges.shape[0] - 1
         name_shape = self.names.shape[0] - 1
         topology_shape = self.topologies.shape[0] - 1
+        dipole_shape = self.dipoles.shape[0] - 1
 
         shape_array = np.array(
-            [structure_shape, charge_shape, name_shape, topology_shape], dtype=int)
+            [structure_shape, charge_shape, name_shape, topology_shape, dipole_shape], dtype=int)
 
         return shape_array
 
@@ -970,7 +986,7 @@ class Gdata():
 
     def read_xyz_dir(self, dir_name: str, header=True):
         """
-        Read all xyz files in the directory. Sotre in self.structures and self.names
+        Read all xyz files in the directory. Store in self.structures and self.names
 
         Args:
             dir_name: path/name of directory. type <str>
@@ -1039,15 +1055,15 @@ class Gdata():
         file.close()
 
     # get dipole moment info
-    def get_dipole(self, style:str='norm') -> np.ndarray:
+    def get_dipole(self, style: str='norm') -> np.ndarray:
         """
         Output dipole moment
 
         Args:
             style: select output style. <str>
+                Alternative:
                     norm: output the norm of dipole moment
                     xyz: output dipole in x, y and z directions
-                    ivec:
         Return:
             dipole: dipole moment information. type <numpy.ndarray>
         """
@@ -1079,7 +1095,7 @@ class Gdata():
         return degree
 
     # get adjacency matrix
-    def get_adjacency(self, self_loop: bool = False) -> np.ndarray:
+    def get_adjacency(self, self_loop: bool=False) -> np.ndarray:
         """
         Output adjacency for GCN
 
@@ -1111,21 +1127,22 @@ class Gdata():
         return adjacency
 
     # get topological data
-    def get_atom_info(self, format: str = 'array') -> np.ndarray:
+    def get_atom_info(self, style: str='array') -> np.ndarray:
         """
         Output atom type in order
 
         Args:
-            format: output format. type <str>
-                'array': default value. output atomic number in array
-                'matrix': output atomic number in matrix
+            style: output style. type <str>
+                Alternative:
+                    array: default value. output atomic number in array
+                    matrix: output atomic number in matrix
         Returns:
             atom_info: atomic number in array or matrix. type <numpy.ndarray>
         """
 
         atom_info = np.array(self.structures[1:, :, 0], dtype=int)
 
-        if format == 'matrix':
+        if style == 'matrix':
             atom_matrix = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=int)
             data_num = self.get_data_shape().max()
@@ -1140,10 +1157,10 @@ class Gdata():
 
             return atom_matrix[1:]
 
-        elif format == 'array':
+        elif style == 'array':
             return atom_info
 
-    def get_topologies(self, self_loop: bool = False) -> np.ndarray:
+    def get_topologies(self, self_loop: bool=False) -> np.ndarray:
         """
         Output stored topological data
 
@@ -1179,19 +1196,22 @@ class Gdata():
 
     # get charges data
 
-    def get_charges(self, matrix: bool = False) -> np.ndarray:
+    def get_charges(self, style: str='array') -> np.ndarray:
         """
         Output stored charges data
 
         Args:
-            Matrix: if true, charge info will be presented in matrix. type <bool>
+            style: output style
+                Alternative:
+                    array: output charge in array
+                    matrix: output charge in diagonal element of a matrix
         Returns:
             charges: an array contains charges distribution. type <numpy.ndarray>
         """
 
         chagre_info = self.charges[1:]
 
-        if matrix == True:
+        if style == 'matrix':
             charge_matrix = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=float)
             data_num = self.get_data_shape().max()
@@ -1206,7 +1226,7 @@ class Gdata():
 
             return charge_matrix[1:]
 
-        else:
+        elif style == 'array':
             return chagre_info
 
     # get structure data
@@ -1217,7 +1237,6 @@ class Gdata():
 
         Args:
             coor_only: output coordinates info only. type <bool>
-                default: False
         Returns:
             structures: an array contains structural coordinates. type <numpy.ndarray>
         """
@@ -1229,14 +1248,14 @@ class Gdata():
     # load data from npy
 
     def load(self,
-             structure_name: str = None,
-             charge_name: str = None,
-             name_name: str = None,
-             topology_name: str = None,
-             dipole_name: str = None):
+             structure_name: str=None,
+             charge_name: str=None,
+             name_name: str=None,
+             topology_name: str=None,
+             dipole_name: str=None):
         """
         Load saved structure, charge and name data from .npy file.
-        Warning: this will erase all exist data in class
+        Warning: this will erase all exist data in class. Create a new class and use merge to keep existing data.
 
         Args:
             structure_name: path and name of saved structure data. type <str>
@@ -1311,13 +1330,13 @@ class Gdata():
     # save data as npy
 
     def save(self,
-             structure_name: str = None,
-             charge_name: str = None,
-             name_name: str = None,
-             topology_name: str = None,
-             dipole_name: str = None):
+             structure_name: str=None,
+             charge_name: str=None,
+             name_name: str=None,
+             topology_name: str=None,
+             dipole_name: str=None):
         """
-        Save data as numpy .npy data
+        Save data as numpy .npy files
 
         Args:
             structure_name: path and name of structure data. type <str>
@@ -1463,12 +1482,12 @@ class Gdata():
 
 
 def gdata(max_atom=100,
-          charge_type = 'Mulliken',
-          structures: np.ndarray = None,
-          charges: np.ndarray = None,
-          names: np.ndarray = None,
-          topologies: np.ndarray = None,
-          dipoles: np.ndarray = None,
+          charge_type='Mulliken',
+          structures: np.ndarray=None,
+          charges: np.ndarray=None,
+          names: np.ndarray=None,
+          topologies: np.ndarray=None,
+          dipoles: np.ndarray=None
         ) -> Gdata:
     """
     Build Gdata dataframe
