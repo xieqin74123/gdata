@@ -59,7 +59,7 @@ Gaussian data processing tool. Designed for large number of Gaussian .log files 
         Gdata_final: merged Gdata class. type <Gdata>
         
 ## Class Gdata()
-### Initialisation __init__(self, charge_type='Mulliken', max_atom=100)
+### Initialisation \_\_init\_\_(self, charge_type='Mulliken', max_atom=100)
         Initialise Gdata class.
 
         Args:
