@@ -81,9 +81,15 @@ def gdata_manu_title (selected_data: int):
 
     # information
     print('INFORMATION:')
-    print('maximum allowed atom: \t %d' % (gdata_list[selected_data].max_atom))
-    print('number of data: \t %d' % (gdata_list[selected_data].get_data_shape()[0]))
-    print('charge type: \t %s' % (gdata_list[selected_data].charge_type))
+    print('Maximum allowed atom: \t %d' % (gdata_list[selected_data].max_atom))
+    print('Number of data: \t %d' % (gdata_list[selected_data].get_data_shape()[0]))
+    print('Charge type: \t \t %s' % (gdata_list[selected_data].charge_type))
+    mi_coor = 'N'
+    if gdata_list[selected_data].mi_coor is True:
+        mi_coor = 'Y'
+    print('Mi coordinates: \t %c' % (mi_coor))
+
+    print('')
     # data existance check
     structures_exist = 'N'
     charges_exist = 'N'
@@ -428,12 +434,13 @@ def data_save_load (selected_data:int, operation:str):
     name_name = directory + 'name.npy'
     topology_name = directory + 'topology.npy'
     dipole_name = directory + 'dipole.npy'
+    config_name = directory + 'config.npy'
     if operation == 'save':
         gdata_list[selected_data].save(
-            structure_name, charge_name, name_name, topology_name, dipole_name)
+            structure_name, charge_name, name_name, topology_name, dipole_name, config_name)
     elif operation == 'load':
         gdata_list[selected_data].load(
-            structure_name, charge_name, name_name, topology_name, dipole_name)
+            structure_name, charge_name, name_name, topology_name, dipole_name, config_name)
     input_command('Press Enter to Continue', numeric_check=False)
 
 def merge () :

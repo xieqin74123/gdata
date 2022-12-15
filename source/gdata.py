@@ -96,7 +96,9 @@ class Gdata():
         """
         # initialise structure, charge and name numpy array
         self.max_atom = max_atom
-        self.charge_type=charge_type
+        self.charge_type = charge_type
+        self.mi_coor = False
+
         self.structures = np.zeros((1, self.max_atom, 4), dtype=float)
         self.charges = np.zeros((1, self.max_atom), dtype=float)
         self.names = np.zeros(1, dtype=str)
@@ -496,6 +498,8 @@ class Gdata():
                 mol_coor_temp = np.append(mol_coor_temp, [atom_coor_temp], axis=0)
             mol_struc_temp = np.concatenate((atom_info[molecule], mol_coor_temp[1:]), axis=1)
             self.structures = np.append(self.structures, [mol_struc_temp], axis=0)
+
+        self.mi_coor = True
         return self.structures[1:]
 
 
@@ -512,18 +516,19 @@ class Gdata():
             print('Gdata: there is no structure data in this class!')
             raise
 
-        print('Gdata: building moment of inertial tensor...')
-
         cm = self.get_mass_centre()
-        orig_coor = self.get_structures(coor_only=True)
 
+        
         # move original point to mass centre
+        print('Gdata: shifting coordinate centre to mass centre...')
+        orig_coor = self.get_structures(coor_only=True)
         cm_atom_vec = orig_coor - np.repeat(cm[:, np.newaxis, :], self.max_atom, axis=1)
-        for molecule in range(self.get_data_shape()[0]):   # set ghost atoms as 0
+        for molecule in tqdm(range(self.get_data_shape()[0])):   # set ghost atoms as 0
             cm_atom_vec[cm_atom_vec == -cm[molecule]] = 0
 
         atom_weight = self.get_atom_weight()
 
+        print('Gdata: building moment of inertial tensor...')
         x = cm_atom_vec[:, :, 0]
         y = cm_atom_vec[:, :, 1]
         z = cm_atom_vec[:, :, 2]
@@ -733,7 +738,7 @@ class Gdata():
         """
 
         # minimise first
-        self.minimise()
+        self.minimise(verbose=False)
 
         if new_max_atom < self.max_atom:
             print(
@@ -873,33 +878,28 @@ class Gdata():
 
     # minimise max_atom number
 
-    def minimise(self):
+    def minimise(self, verbose=True):
         """
-        Reduce maximum allowed atom to minimise the shape of array
+        Reduce maximum allowed atom to minimise the shape of array according to structure coordinates
 
         Args:
             None
         Return:
             None
         """
-
         max_atom_num = 0
-        data_num = self.get_data_shape()[0]
+        
+        atom_info = self.get_atom_info()
 
-        # a blank element is exist in self.structure[0]
-        for i in range(1, data_num + 1):
-            for j in range(0, self.max_atom):
-                atom_info = self.structures[i, j]
-                if atom_info[0] == 0:
-                    if j + 1 > max_atom_num:
-                        max_atom_num = j
-                    break
-        try:
-            self.structures = self.structures[:, :max_atom_num, :]
-            self.charges = self.charges[:, :max_atom_num]
-            self.topologies = self.topologies[:, :max_atom_num, :max_atom_num]
-        finally:
-            self.max_atom = max_atom_num
+        max_atom_num = np.count_nonzero(atom_info, axis=1).max()
+
+        # apply change
+        self.structures = self.structures[:, :max_atom_num, :]
+        self.charges = self.charges[:, :max_atom_num]
+        self.topologies = self.topologies[:, :max_atom_num, :max_atom_num]
+        
+        self.max_atom = max_atom_num
+        if verbose is True:
             print('Gdata: number of maximum allowed atom has been minimised to %d' % (max_atom_num))
 
     # convert to xyz
@@ -1104,25 +1104,21 @@ class Gdata():
         Returns:
             adjacency: adjacency matrix for GCN. type <numpy.ndarray>
         """
+        # if no topologies
+        if self.topologies.shape[0] < 2:
+            print('Gdata: topology data does not exist!')
+            return None
 
         # modified topologies to ajacency matrix, move all non-zero to 1
         adjacency = self.topologies[1:]
-
-        for data_num in range(adjacency.shape[0]):
-            for row in range(adjacency.shape[1]):
-                for col in range(adjacency.shape[2]):
-                    if adjacency[data_num, row, col] == 0:
-                        continue
-                    adjacency[data_num, row, col] = 1
+        adjacency[adjacency != 0] = 1
 
         # add identity
         if self_loop == True:
-            identity = np.zeros(adjacency.shape)
-            for data_num in range(adjacency.shape[0]):
-                for rowcol in range(adjacency.shape[1]):
-                    if np.sum(adjacency[data_num, rowcol]) != 0:
-                        identity[data_num, rowcol, rowcol] = 1
-            adjacency = adjacency + identity
+            atom_info = self.get_atom_info(style='matrix')
+            atom_info[atom_info != 0] = 1
+
+            adjacency = adjacency + atom_info
 
         return adjacency
 
@@ -1143,17 +1139,12 @@ class Gdata():
         atom_info = np.array(self.structures[1:, :, 0], dtype=int)
 
         if style == 'matrix':
-            atom_matrix = np.zeros(
-                (1, self.max_atom, self.max_atom), dtype=int)
-            data_num = self.get_data_shape().max()
-            print('Gdata: reshaping atomic info...')
-            for i in tqdm(range(data_num)):
-                atom_matrix_temp = np.zeros(
-                    (self.max_atom, self.max_atom), dtype=int)
-                for j in range(self.max_atom):
-                    atom_matrix_temp[j][j] = atom_info[i][j]
-                atom_matrix = np.append(
-                    atom_matrix, [atom_matrix_temp], axis=0)
+            atom_matrix = np.zeros((1, self.max_atom, self.max_atom), dtype=int)
+            data_num = self.get_data_shape()[0]
+            for i in range(data_num):
+                atom_temp = np.zeros((self.max_atom, self.max_atom), dtype=int)
+                np.fill_diagonal(atom_temp, atom_info[i])
+                atom_matrix = np.append(atom_matrix, [atom_temp], axis=0)
 
             return atom_matrix[1:]
 
@@ -1172,12 +1163,9 @@ class Gdata():
         topologies = self.topologies[1:]
 
         if self_loop == True:
-            identity = np.zeros(topologies.shape)
-            for data_num in range(topologies.shape[0]):
-                for rowcol in range(topologies.shape[1]):
-                    if np.sum(topologies[data_num, rowcol]) != 0:
-                        identity[data_num, rowcol, rowcol] = 1
-            topologies = topologies + identity
+            atom_info = self.get_atom_info(style='matrix')
+            atom_info[atom_info != 0] = 1
+            topologies = topologies + atom_info
 
         return topologies
 
@@ -1215,12 +1203,10 @@ class Gdata():
             charge_matrix = np.zeros(
                 (1, self.max_atom, self.max_atom), dtype=float)
             data_num = self.get_data_shape().max()
-            print('Gdata: reshaping charge data...')
-            for i in tqdm(range(data_num)):
+            for i in range(data_num):
                 charge_matrix_temp = np.zeros(
                     (self.max_atom, self.max_atom), dtype=float)
-                for j in range(self.max_atom):
-                    charge_matrix_temp[j][j] = chagre_info[i][j]
+                np.fill_diagonal(charge_matrix_temp, chagre_info[i])
                 charge_matrix = np.append(
                     charge_matrix, [charge_matrix_temp], axis=0)
 
@@ -1252,7 +1238,8 @@ class Gdata():
              charge_name: str=None,
              name_name: str=None,
              topology_name: str=None,
-             dipole_name: str=None):
+             dipole_name: str=None,
+             config_name: str=None):
         """
         Load saved structure, charge and name data from .npy file.
         Warning: this will erase all exist data in class. Create a new class and use merge to keep existing data.
@@ -1272,24 +1259,26 @@ class Gdata():
         topologies = None
         dipoles = None
 
-        if structure_name != None:
+        if structure_name is not None:
             structures = np.load(structure_name)
-            max_atom = structures.shape[1]
-            data_num = structures.shape[0]
-        if charge_name != None:
+        if charge_name is not None:
             charges = np.load(charge_name)
-            max_atom = charges.shape[1]
-            data_num = charges.shape[0]
-        if name_name != None:
+        if name_name is not None:
             names = np.load(name_name)
-            data_num = names.shape[0]
-        if topology_name != None:
+        if topology_name is not None:
             topologies = np.load(topology_name)
-            max_atom = topologies.shape[1]
-            data_num = topologies.shape[0]
-        if dipole_name != None:
+        if dipole_name is not None:
             dipoles = np.load(dipole_name)
-            data_num = dipoles.shape[0]
+        if config_name is not None:
+            config = np.load(config_name)
+            # extract config info
+            # config info are stored as np.array [max_atom, charge_type, mi_coor], dtype=str
+            max_atom = int(config[0])
+            charge_type = config[1]
+            mi_coor = bool(config[2])
+        else:
+            print('Gdata: warining: no config file detected!')
+            max_atom = self.max_atom
 
         # data check
         if self.__data_check(structures, charges, names, topologies, dipoles) == True:
@@ -1303,28 +1292,23 @@ class Gdata():
             self.names = np.zeros(1, dtype=str)
             self.dipoles = np.zeros((1, 3), dtype=float)
             # mount data to class
-            verbose_str = ''
-            if structure_name != None:
+            if structure_name is not None:
                 self.structures = np.append(
                     self.structures, structures, axis=0)
-                verbose_str = verbose_str + ', ' + structure_name
-            if charge_name != None:
+            if charge_name is not None:
                 self.charges = np.append(self.charges, charges, axis=0)
-                verbose_str = verbose_str + ', ' + charge_name
-            if name_name != None:
+            if name_name is not None:
                 self.names = np.append(self.names, names)
-                verbose_str = verbose_str + ', ' + name_name
-            if topology_name != None:
+            if topology_name is not None:
                 self.topologies = np.append(
                     self.topologies, topologies, axis=0)
-                verbose_str = verbose_str + ', ' + topology_name
-            if dipole_name != None:
-                self.dipoles = np.append(self.delete_dipole, dipoles, axis=0)
-                verbose_str = verbose_str + ', ' + dipole_name
+            if dipole_name is not None:
+                self.dipoles = np.append(self.dipoles, dipoles, axis=0)
+            if config_name is not None:
+                self.charge_type = charge_type
+                self.mi_coor = mi_coor
 
-            verbose_str = verbose_str[2:]
-
-            print('Gdata:', data_num, 'data loaded and validated.',
+            print('Gdata:', self.get_data_shape().max(), 'data loaded and validated.',
                       'Maximum allowed atom changed to', self.max_atom)
 
     # save data as npy
@@ -1334,7 +1318,8 @@ class Gdata():
              charge_name: str=None,
              name_name: str=None,
              topology_name: str=None,
-             dipole_name: str=None):
+             dipole_name: str=None,
+             config_name: str=None):
         """
         Save data as numpy .npy files
 
@@ -1348,26 +1333,31 @@ class Gdata():
             None
         """
         verbose_str = ''
-        if structure_name != None:
+        if structure_name is not None:
             structures = self.structures[1:]
             np.save(structure_name, structures)
             verbose_str = verbose_str + ', ' + structure_name
-        if charge_name != None:
+        if charge_name is not None:
             charges = self.charges[1:]
             np.save(charge_name, charges)
             verbose_str = verbose_str + ', ' + charge_name
-        if name_name != None:
+        if name_name is not None:
             names = self.names[1:]
             np.save(name_name, names)
             verbose_str = verbose_str + ', ' + name_name
-        if topology_name != None:
+        if topology_name is not None:
             topologies = self.topologies[1:]
             np.save(topology_name, topologies)
             verbose_str = verbose_str + ', ' + topology_name
-        if dipole_name != None:
+        if dipole_name is not None:
             dipoles = self.dipoles[1:]
             np.save(dipole_name, dipoles)
             verbose_str = verbose_str + ', ' + dipole_name
+        if config_name is not None:
+            #config info are stored as np.array [max_atom, charge_type, mi_coor], dtype=str
+            config = np.array((self.max_atom, self.charge_type, self.mi_coor), dtype=str)
+            np.save(config_name, config)
+            verbose_str = verbose_str + ', ' + config_name
 
         verbose_str = verbose_str[2:]
         print('Gdata: Data saved as: ', verbose_str)
@@ -1544,10 +1534,14 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
         print('Gdata: merge failed! Data check not pass.')
         raise
 
+    # Gdata config check
+    if Gdata1.charge_type != Gdata2.charge_type:
+        print('Gdata: merge failed! Charge types of two set of data are different!')
+
     # initialise class
 
-    Gdata1.minimise()
-    Gdata2.minimise()
+    Gdata1.minimise(verbose=False)
+    Gdata2.minimise(verbose=False)
 
     new_max_atom = max(Gdata1.max_atom, Gdata2.max_atom)
 
