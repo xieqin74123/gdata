@@ -1,6 +1,7 @@
 import gdata
 import os
 import platform
+import numpy as np
 
 version = 'master'
 
@@ -24,9 +25,9 @@ def print_welcome ():
     global version
 
     print('Platform identified as %s' % (pltf))
-    print('Welcome to Gdata, version: %s' % (version))
+    print('Welcome to Gdata TUI, version: %s' % (version))
 
-def main_manu ():
+def main_menu ():
     global gdata_list
     global gdata_count
     global gdata_name
@@ -39,7 +40,7 @@ def main_manu ():
         print_welcome()
 
     # title
-    print('--- MAIN MANU ---')
+    print('--- MAIN MENU ---')
 
     list_num = -1
     print('OPERATIONS:')
@@ -59,25 +60,26 @@ def main_manu ():
     
     return gd_list_start, list_num
 
-def gdata_manu_title (selected_data: int):
+def gdata_menu_title (selected_data: int):
     global gdata_name
     global gdata_list
     clear()
-    print('--- Gdata Manu %s ---' % (gdata_name[selected_data]))
+    print('--- Gdata Menu %s ---' % (gdata_name[selected_data]))
 
     # functions
     print('OPERATIONS:')
     print('-1 \t - \t Refresh')
     print('0 \t - \t Back')
-    print('1 \t - \t Delete')
+    print('1 \t - \t Delete Menu')
     print('2 \t - \t Change Gdata Settings')
     print('3 \t - \t Rename')
-    print('4 \t - \t Read Gaussian Logs')
-    print('5 \t - \t Read Gaussian Zmat')
-    print('6 \t - \t Save Data as .npy')
-    print('7 \t - \t Laod .npy Data')
-    print('8 \t - \t Manage .xyz Structure Data')
-    print('9 \t - \t Convert to MI Based Coordinates')
+    print('4 \t - \t Read Gaussian log')
+    print('5 \t - \t Read Gaussian zmat')
+    print('6 \t - \t Read mol File')
+    print('7 \t - \t Save Data as .npy')
+    print('8 \t - \t Laod .npy Data')
+    print('9 \t - \t Manage .xyz Structure Data')
+    print('10 \t - \t Convert to MI Based Coordinates')
 
     # information
     print('INFORMATION:')
@@ -90,23 +92,7 @@ def gdata_manu_title (selected_data: int):
     print('Mi coordinates: \t %c' % (mi_coor))
 
     print('')
-    # data existance check
-    structures_exist = 'N'
-    charges_exist = 'N'
-    names_exist = 'N'
-    topologies_exist = 'N'
-    dipoles_exist = 'N'
-
-    if gdata_list[selected_data].structures.shape[0] > 1:
-        structures_exist = 'Y'
-    if gdata_list[selected_data].charges.shape[0] > 1:
-        charges_exist = 'Y'
-    if gdata_list[selected_data].names.shape[0] > 1:
-        names_exist = 'Y'
-    if gdata_list[selected_data].topologies.shape[0] > 1:
-        topologies_exist = 'Y'
-    if gdata_list[selected_data].dipoles.shape[0] > 1:
-        dipoles_exist = 'Y'
+    structures_exist, charges_exist, names_exist, topologies_exist, dipoles_exist = data_exist_check(selected_data)
     
     print('DATA EXISTANCE:')
     print('XYZ Struacture: \t %c' % (structures_exist))
@@ -116,66 +102,204 @@ def gdata_manu_title (selected_data: int):
     print('Dipole Moment: \t \t %c' % (dipoles_exist))
 
 
-def gdata_manu (selected_data: int):
+def gdata_menu (selected_data: int):
     global gdata_list
     global gdata_count
     global gdata_name
 
-    gdata_manu_title(selected_data)
+    gdata_menu_title(selected_data)
     while(1):
         ucommand = input_command()
         # standard operations
         if ucommand == -1:      # refresh
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
             continue
         elif ucommand == 0:     # back
             return 0
         elif ucommand == 1:     # delete
-            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
-            if del_confirm == 'yes':
-                gdata_list.pop(selected_data)
-                gdata_name.pop(selected_data)
+            if gdata_delete(selected_data) == 1:
                 return 0
-            else:
-                print('Aborted')
+            gdata_menu_title(selected_data)
         elif ucommand == 2:     # minimise
             change_settings(selected_data)
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
         elif ucommand == 3:
             new_name = input_command('New name:', numeric_check=False)
             gdata_name[selected_data] = new_name
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
         elif ucommand == 4:     # read log
             read_log(selected_data)
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
         elif ucommand == 5:     # read zmat
             read_zmat(selected_data)
-            gdata_manu_title(selected_data)
-        elif ucommand == 6:     # save data
+            gdata_menu_title(selected_data)
+        elif ucommand == 6:
+            read_mol(selected_data)
+            gdata_menu_title(selected_data)
+        elif ucommand == 7:     # save data
             data_save_load(selected_data, 'save')
-            gdata_manu_title(selected_data)
-        elif ucommand == 7:     # load data
+            gdata_menu_title(selected_data)
+        elif ucommand == 8:     # load data
             data_save_load(selected_data, 'load')
-            gdata_manu_title(selected_data)
-        elif ucommand == 8:     # manage xyz
+            gdata_menu_title(selected_data)
+        elif ucommand == 9:     # manage xyz
             manage_xyz(selected_data)
-            gdata_manu_title(selected_data)
-        elif ucommand == 9:
+            gdata_menu_title(selected_data)
+        elif ucommand == 10:
             try:
                 gdata_list[selected_data].convert_to_mi_coordinate()
             except Exception as e:
                 print(e)
             input_command('Press Enter to Continue', numeric_check=False)
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
         # advanced operations
         elif ucommand == -999:
             clear()
             cat_data(selected_data)
-            gdata_manu_title(selected_data)
+            gdata_menu_title(selected_data)
 
         # error
         else:
             print('Invalid Input!')
+def read_mol (selected_data:int):
+    global gdata_list
+
+    read_mol_title(selected_data)
+
+    while(1):
+        ucommand = input_command()
+        if ucommand == -1:  # Refresh
+            read_mol_title(selected_data)
+        elif ucommand == 0: # Back
+            return 0
+        elif ucommand == 1: # Read Single mol File
+            path = input_command('Path:', numeric_check=False)
+            try:
+                gdata_list[selected_data].read_mol_file(path)
+                return 0
+            except Exception as e:
+                print(e)
+                input_command('Press Enter to Continue', numeric_check=False)
+                clear()
+        elif ucommand == 2: # Read mol files from Folder
+            path = input_command('Path:', numeric_check=False)
+            try:
+                gdata_list[selected_data].read_mol_dir(path)
+                return 0
+            except Exception as e:
+                print(e)
+                input_command('Press Enter to Continue', numeric_check=False)
+                clear()
+        # error
+        else:
+            print('Invalid Input!')
+
+def read_mol_title (selected_data:int):
+    global gdata_name
+
+    clear()
+    print('Read mol file to %s' % (gdata_name[selected_data]))
+    print('OPERATIONS:')
+    print('-1 \t - \t Refresh')
+    print('0 \t - \t Back')
+    print('1 \t - \t Read Single mol File')
+    print('2 \t - \t Read mol Files from Floder')
+
+def gdata_delete (selected_data:int):
+    global gdata_list
+    global gdata_name
+    gdata_delete_title(selected_data)
+
+    while(1):
+        ucommand = input_command()
+
+        if ucommand == -1:  # Refresh
+            gdata_delete_title(selected_data)
+        elif ucommand == 0:   # Back
+            return 0
+        elif ucommand == 1: # Delete Class
+            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
+            if del_confirm == 'yes':
+                gdata_list.pop(selected_data)
+                gdata_name.pop(selected_data)
+                return 1
+            else:
+                print('Aborted')
+        elif ucommand == 2: #Delete Structure Data
+            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
+            if del_confirm == 'yes':
+                gdata_list[selected_data].delete_structures()
+                return 0
+            else:
+                print('Aborted')
+        elif ucommand == 3: #Delete Charge Data
+            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
+            if del_confirm == 'yes':
+                gdata_list[selected_data].delete_charges()
+                return 0
+            else:
+                print('Aborted')
+        elif ucommand == 4: #Delete topology Data
+            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
+            if del_confirm == 'yes':
+                gdata_list[selected_data].delete_topologies()
+                return 0
+            else:
+                print('Aborted')
+        elif ucommand == 5: #Delete Dipole Data
+            del_confirm = input_command('Type \'yes\' to confirm:', numeric_check=False)
+            if del_confirm == 'yes':
+                gdata_list[selected_data].delete_dipole()
+                return 0
+            else:
+                print('Aborted')
+        # error
+        else:
+            print('Invalid Input!')
+
+def gdata_delete_title (selected_data:int):
+    global gdata_name
+    clear()
+    print('--- Delete Data in %s ---' % (gdata_name[selected_data]))
+    print('OPERATIONS:')
+    print('-1 \t - \t Refresh')
+    print('0 \t - \t Back')
+    print('1 \t - \t Delete this Class')
+    print('2 \t - \t Delete Structure Data')
+    print('3 \t - \t Delete Charge Data')
+    print('4 \t - \t Delete Topology Data')
+    print('5 \t - \t Delete Dipole Moment Data')
+
+    structures_exist, charges_exist, names_exist, topologies_exist, dipoles_exist = data_exist_check(selected_data)
+    print('DATA EXISTANCE:')
+    print('XYZ Struacture: \t %c' % (structures_exist))
+    print('Charge Data: \t \t %c' % (charges_exist))
+    print('Name Data: \t \t %c' % (names_exist))
+    print('Topology Info: \t \t %c' % (topologies_exist))
+    print('Dipole Moment: \t \t %c' % (dipoles_exist))
+
+def data_exist_check (selected_data:int):
+    global gdata_list
+
+    # Data Exist Check
+    structures_exist = 'N'
+    charges_exist = 'N'
+    names_exist = 'N'
+    topologies_exist = 'N'
+    dipoles_exist = 'N'
+
+    if np.count_nonzero(gdata_list[selected_data].structures) > 0:
+        structures_exist = 'Y'
+    if np.count_nonzero(gdata_list[selected_data].charges) > 0:
+        charges_exist = 'Y'
+    if gdata_list[selected_data].names.shape[0] > 1:
+        names_exist = 'Y'
+    if np.count_nonzero(gdata_list[selected_data].topologies) > 0:
+        topologies_exist = 'Y'
+    if np.count_nonzero(gdata_list[selected_data].dipoles) > 0:
+        dipoles_exist = 'Y'
+
+    return structures_exist, charges_exist, names_exist, topologies_exist, dipoles_exist
 
 def manage_xyz (selected_data:int):
     global gdata_list
@@ -369,19 +493,19 @@ def change_settings (selected_data:int):
         ucommand = input_command()
         if ucommand == -1:      # refresh
             change_settings_title(selected_data)
-        elif ucommand == 0:
+        elif ucommand == 0:     # back
             return 0
-        elif ucommand == 1:
+        elif ucommand == 1:     # minimise
             gdata_list[selected_data].minimise()
             change_settings_title(selected_data)
-        elif ucommand == 2:
+        elif ucommand == 2:     # change max_atom
             new_max_atom = input_command('New Maximum Allowed Atom:')
             if new_max_atom >= 0:
-                gdata_list[selected_data].max_atom = new_max_atom
+                gdata_list[selected_data].change_max_atom(new_max_atom)
                 change_settings_title(selected_data)
             else:
                 print('Invalid Input!')
-        elif ucommand == 3:
+        elif ucommand == 3:     # change charge type
             clear()
             print('Select Chagre Type:')
             print('1 \t - \t Mulliken Charge')
@@ -405,7 +529,7 @@ def change_settings_title (selected_data:int):
     print('OPERATIONS:')
     print('-1 \t - \t Refresh')
     print('0 \t - \t Back')
-    print('1 \t - \t Change Maximum Allowed Atom (Auto)')
+    print('1 \t - \t Minimise Maximum Allowed Atom (Auto)')
     print('2 \t - \t Change Maximum Allowed Atom (Manually)')
     print('3 \t - \t Change Charge Type')
     print('INFORMATION:')
@@ -503,7 +627,7 @@ def merge_title (data_1, data_2):
         data_2_name = 'None'
     else:
         data_2_name = gdata_name[data_2]
-    print('--- Merge Manu ---')
+    print('--- Merge menu ---')
     print('OPERATIONS:')
     print('-1 \t - \t Refresh')
     print('0 \t - \t Back')
@@ -541,31 +665,32 @@ if __name__ == '__main__':
     gdata_name = []
     new_gdata()
     first_time = 1
-    gd_list_start, list_num = main_manu()
-    # main manu input
+    gd_list_start, list_num = main_menu()
+    # main menu input
     while(1):
         ucommand = input_command()
         if ucommand == -1:      # regresh
-            gd_list_start, list_num = main_manu()
+            gd_list_start, list_num = main_menu()
             continue
         elif ucommand == 0:     # exit
             clear()
             exit_confirm = input_command('Type \'exit\' to Exit:', numeric_check=False)
             if exit_confirm == 'exit':
+                clear()
                 exit()
             else:
-                gd_list_start, list_num = main_manu()
+                gd_list_start, list_num = main_menu()
                 continue
         elif ucommand == 1:     # new gdata
             new_gdata()
-            gd_list_start, list_num = main_manu()
+            gd_list_start, list_num = main_menu()
         elif ucommand == 2:     # merge
             merge()
-            gd_list_start, list_num = main_manu()
+            gd_list_start, list_num = main_menu()
         elif ucommand in range(gd_list_start, list_num):
             selected_data = ucommand - 3
-            gdata_manu(selected_data)
+            gdata_menu(selected_data)
             selected_data = 0
-            gd_list_start, list_num = main_manu()
+            gd_list_start, list_num = main_menu()
         else:
             print('Invalid Input!')

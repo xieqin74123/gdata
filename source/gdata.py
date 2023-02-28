@@ -4,6 +4,7 @@ import numpy as np
 import os
 from tqdm import tqdm
 from bidict import bidict
+
 # Gdata version
 version = 'master'
 
@@ -170,7 +171,6 @@ class Gdata():
                 print('Gdata: loaded names data dimension did not match requirement!')
                 return False
             data_num.append(dipoles.shape[0])
-
         # check whether data have same data number and max_atom
         if data_num.count(data_num[0]) != len(data_num):
             print('Gdata: the number of data does not match between data!')
@@ -273,7 +273,7 @@ class Gdata():
                 break
             else:
                 # print elements
-                print('%c %f %f %f' % (element_dic(
+                print('%s %f %f %f' % (element_dic(
                     coordinate[i][0]), coordinate[i][1], coordinate[i][2], coordinate[i][3]), file=file)
         return atom_num
 
@@ -351,7 +351,7 @@ class Gdata():
 
     # data validation
 
-    def __val__log(self, file: TextIOWrapper) -> bool:
+    def __val_log(self, file: TextIOWrapper) -> bool:
         """
         Validate Gaussian log file if it was exit normally
 
@@ -470,7 +470,154 @@ class Gdata():
         file.seek(position, 0)  # move pointer back to original position
         return structure_temp, charge_temp, dipole_temp
 
+    def __read_mol(self, file: TextIOWrapper) -> np.ndarray:
+        """
+        Read in .mol file
+
+        Args:
+            file: file to be read. type <TextIOWrapper>
+        Return:
+            structure: structral coordinates. type <np.ndarray>
+            topology: topological information. type <np.ndarray>
+        """
+        position = file.tell()
+        file.seek(0, 0)
+
+        file_content = file.readlines()
+
+        # read atom number
+        atom_num = int(file_content[3].split()[0])
+        if atom_num > self.max_atom:
+            print("Gdata: number of atoms read is larger than maximun allow atom!")
+            print("Gdata: auto change max_atom to %d." % (atom_num))
+            self.change_max_atom(atom_num)
+
+        # read structure coordinate
+        structure = np.zeros((1, self.max_atom, 4), dtype=float)
+        for i in range(atom_num):
+            line_temp = file_content[i+4]
+            line_temp = line_temp.split()
+            structure[0, i, 0] = element_dic(line_temp[3])
+            structure[0, i, 1] = line_temp[0]
+            structure[0, i, 2] = line_temp[1]
+            structure[0, i, 3] = line_temp[2]
+
+        # read topological information
+        topology = np.zeros((1, self.max_atom, self.max_atom), dtype=int)
+        topo_start = 4 + atom_num
+        topo_end = len(file_content) - 1
+
+        for i in range(topo_start, topo_end):
+            line_temp = file_content[i].split()
+            atom_1 = int(line_temp[0]) - 1
+            atom_2 = int(line_temp[1]) - 1
+            bond_order = int(line_temp[2])
+            topology[0, atom_1, atom_2] = bond_order
+            topology[0, atom_2, atom_1] = bond_order
+
+        # set back pointer
+        file.seek(position, 0)
+
+        return structure, topology
+        
+
     """ PUBLIC """
+    def read_mol_dir(self, dir_name: str):
+        """
+        Read .mol files from folder
+
+        Args:
+            dir_name: dir path and name to be read. type <str>
+        Return:
+            None
+        """
+        # check '/'
+        name_len = len(dir_name)
+        if dir_name[name_len-1] != '/':
+            dir_name = dir_name + '/'
+
+        file_list = os.listdir(dir_name)
+
+        file_num = len(file_list)
+        fail_num = 0
+        print('Gdata: Start reading mol data from', dir_name)
+        for file_name in tqdm(file_list):
+            full_name = dir_name + file_name    # conbine name
+
+            # skip wrong file
+            try:
+                file = open(full_name, 'r')
+            except:
+                print('Gdata: Fail to open file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
+
+            try:
+                structure, topology = self.__read_mol(file)
+            except:
+                print('Gdata: Fail to read file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
+            real_name = self.__find_real_name(file_name)
+            # append this structure to list
+            self.structures = np.append(
+                self.structures, structure, axis=0)
+            # append this topology to list
+            self.topologies = np.append(self.topologies, topology, axis=0)
+            # append this name to list
+            self.names = np.append(self.names, real_name)
+            file.close()
+
+        print('Gdata:', file_num - fail_num,
+                'mol files read successfully!', fail_num, 'failed')
+
+    def read_mol_file(self, file_name: str):
+        """
+        Read single .mol file
+
+        Args:
+            file_name: file path and name to be read. type <str>
+        Return:
+            None
+        """
+
+        file = open(file_name, 'r')
+        strucutre, topology = self.__read_mol(file)
+
+        real_name = self.__find_real_name(file_name)
+
+        self.structures = np.append(self.structures, strucutre, axis=0)
+        self.topologies = np.append(self.topologies, topology, axis=0)
+        self.names = np.append(self.names, real_name)
+
+        file.close()
+
+        print('Gdata: mol file successfully read:', file_name)
+
+
+    def get_atomic_distance(self) -> np.ndarray:
+        """
+        Get matrix contain atomic distance within molecule
+
+        Args:
+            None
+        Return:
+            atomic_distance_matrix: type <numpy.ndarrayy>
+        """
+        print('Gdata: generating atomic distance matrix...')
+        data_num = self.get_data_shape()[0]
+        coordingnate = self.get_structures(coor_only=True)
+        atom_info = self.get_atom_info()
+        atm_dst = np.zeros((data_num, self.max_atom, self.max_atom))
+        for molecule in tqdm(range(data_num)):
+            for atom1 in range(self.max_atom):
+                for atom2 in range(self.max_atom):
+                    if atom_info[molecule, atom1] * atom_info[molecule, atom2] == 0:
+                        atm_dst[molecule, atom1, atom2] = 0
+                        continue
+                    atm_dst[molecule, atom1, atom2] = np.linalg.norm(coordingnate[molecule, atom1] - coordingnate[molecule, atom2])
+        return atm_dst
+
     def convert_to_mi_coordinate(self) -> np.ndarray:
         """
         Convert input coordinates to moment of inertial tensor eigen vector based unified coordinates. 
@@ -652,7 +799,7 @@ class Gdata():
 
     def pad_zeros(self):
         """
-        Pad zeros to thoes blank without data to fit in shape
+        Pad zeros to those blank without data to fit in shape
 
         Args:
             None
@@ -660,16 +807,16 @@ class Gdata():
             None
         """
 
-        data_num = self.get_data_shape()[0] + 1
+        data_num = self.get_data_shape().max()
 
         self.structures = np.pad(
-            self.structures, ((0, data_num-self.structures.shape[0]), (0, 0), (0, 0)))
+            self.structures, ((0, data_num-self.get_data_shape()[0]), (0, 0), (0, 0)))
         self.charges = np.pad(
-            self.charges, ((0, data_num-self.charges.shape[0]), (0, 0)))
-        self.names = np.pad(self.names, (0, data_num-self.names.shape[0]))
+            self.charges, ((0, data_num-self.get_data_shape()[1]), (0, 0)))
+        self.names = np.pad(self.names, (0, data_num-self.get_data_shape()[2]))
         self.topologies = np.pad(
-            self.topologies, ((0, data_num-self.topologies.shape[0]), (0, 0), (0, 0)))
-        self.dipoles = np.pad(self.dipoles, ((0, data_num-self.dipoles.shape[0]), (0, 0)))
+            self.topologies, ((0, data_num-self.get_data_shape()[3]), (0, 0), (0, 0)))
+        self.dipoles = np.pad(self.dipoles, ((0, data_num-self.get_data_shape()[4]), (0, 0)))
 
     def delete_dipole(self):
         """
@@ -738,7 +885,8 @@ class Gdata():
         """
 
         # minimise first
-        self.minimise(verbose=False)
+        if new_max_atom < self.max_atom:
+            self.minimise(verbose=False)
 
         if new_max_atom < self.max_atom:
             print(
@@ -752,6 +900,8 @@ class Gdata():
         self.charges = np.pad(self.charges, ((0, 0), (0, pad_num)))
         self.topologies = np.pad(
             self.topologies, ((0, 0), (0, pad_num), (0, pad_num)))
+        
+        self.max_atom = new_max_atom
 
     def self_check(self) -> bool:
         """
@@ -768,15 +918,15 @@ class Gdata():
         topologies = None
         dipoles = None
 
-        if self.structures.shape[0] != 1:
+        if np.count_nonzero(self.structures) > 0:
             structures = self.structures[1:]
-        if self.charges.shape[0] != 1:
+        if np.count_nonzero(self.charges) > 0:
             charges = self.charges[1:]
-        if self.names.shape[0] != 1:
+        if np.count_nonzero(self.names) > 0:
             names = self.names[1:]
-        if self.topologies.shape[0] != 1:
+        if np.count_nonzero(self.topologies) > 0:
             topologies = self.topologies[1:]
-        if self.dipoles.shape[0] != 1:
+        if np.count_nonzero(self.dipoles) > 0:
             dipoles = self.dipoles[1:]
 
         return self.__data_check(structures, charges, names, topologies, dipoles)
@@ -878,20 +1028,24 @@ class Gdata():
 
     # minimise max_atom number
 
-    def minimise(self, verbose=True):
+    def minimise(self, verbose=True) -> int:
         """
         Reduce maximum allowed atom to minimise the shape of array according to structure coordinates
 
         Args:
             None
         Return:
-            None
+            min_max_atom: the minimun allowed max_atom number of this set
         """
-        max_atom_num = 0
-        
-        atom_info = self.get_atom_info()
+        max_atom_list = np.zeros(1, dtype=int)
 
-        max_atom_num = np.count_nonzero(atom_info, axis=1).max()
+        max_atom_list = np.append(max_atom_list, np.count_nonzero(self.structures, axis=1).max())
+        max_atom_list = np.append(max_atom_list, np.count_nonzero(self.charges, axis=1).max())
+        max_atom_list = np.append(max_atom_list, np.count_nonzero(self.topologies, axis=1).max())
+        max_atom_num = np.max(max_atom_list[1:])
+        if max_atom_num < 1:
+            print('Gdata: Unable to minimise this class. max_atom not changed.')
+            return 0
 
         # apply change
         self.structures = self.structures[:, :max_atom_num, :]
@@ -901,6 +1055,8 @@ class Gdata():
         self.max_atom = max_atom_num
         if verbose is True:
             print('Gdata: number of maximum allowed atom has been minimised to %d' % (max_atom_num))
+
+        return max_atom_num
 
     # convert to xyz
 
@@ -1401,7 +1557,7 @@ class Gdata():
 
             # validate file and skip bad file
             if validation == True:
-                if self.__val__log(file) == False:
+                if self.__val_log(file) == False:
                     print('Gdata: file', file_name,
                             'did not pass validation! Skipped!')
                     fail_num = fail_num + 1
@@ -1448,7 +1604,7 @@ class Gdata():
         file = open(file_name, 'r')
         # validate file
         if validation == True:
-            if self.__val__log(file) == False:
+            if self.__val_log(file) == False:
                 print('Gdata: file', file_name,
                       'did not pass validation! Aborted!')
                 file.close()
@@ -1621,9 +1777,8 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
                 print('Gdata: Data in Second data set: \n', topology2[loc2], sep='')
                 raise
             
-
             # dipole
-            if np.array_equal(dipole1[loc1], dipole1[loc2]) == True:
+            if np.array_equal(dipole1[loc1], dipole2[loc2]) == True:
                 dipole_temp = dipole1[loc1]
             elif np.count_nonzero(dipole1[loc1]) * np.count_nonzero(dipole2[loc2]) == 0:
                 dipole_temp = dipole1[loc1] + dipole2[loc2]
@@ -1633,6 +1788,7 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
                 print('Gdata: Data in first data set: \n', dipole1[loc1], sep='')
                 print('Gdata: Data in Second data set: \n', dipole2[loc2], sep='')
                 raise
+
 
             # remove item in data2
             structure2 = np.delete(structure2, loc2, axis=0)
