@@ -83,6 +83,19 @@ def vec_normalise(vec: np.ndarray) -> np.ndarray:
         return vec
     return vec / norm
 
+def bond_dic(sym):
+    try:
+        bd = {
+            '1': 1,
+            '2': 2,
+            '3': 3,
+            'am': 4,
+            'ar': 5,
+            'du': 6
+        }
+        return bd[sym]
+    except:
+        return 0
 
 class Gdata():
 
@@ -129,55 +142,92 @@ class Gdata():
         """
 
         data_num = []
-        max_atom = []
+        max_atom_list = []
 
-        if structures is not None and structures.shape[0] != 0:
-            if structures.ndim != 3:
-                print(
-                    'Gdata: loaded structures data dimension did not match requirement!')
-                return False
-            if structures.shape[2] != 4:
-                print('Gdata: loaded structures data shape did not match requirement!')
-                return False
+        # check structure: ideal shape should be [x, max_atom, 4]
+        if structures is not None:
+            # save data number for later
             data_num.append(structures.shape[0])
-            max_atom.append(structures.shape[1])
-
-        if charges is not None and charges.shape[0] != 0:
-            if charges.ndim != 2:
-                print('Gdata: loaded charges data dimension did not match requirement!')
+            # check number of dimension:
+            if np.ndim(structures) is not 3:
+                print('Gdata: number of dimension of structure info is not correct!')
+                print('Gdata: expect to be 3, but %d detected' % (np.ndim(structures)))
                 return False
+            # save max_atom for later
+            max_atom_list.append(structures.shape[1])
+            # check length in dimension 2
+            if structures.shape[2] is not 4:
+                print('Gdata: data shape of structure info in dimension 2 in not correct!')
+                print('Gdata: expect to be 4, but %d detected' % (structures.shape[2]))
+                return False
+
+        # check charge: ideal shape should be [x, max_atom]
+        if charges is not None:
+            # save data number for later:
             data_num.append(charges.shape[0])
-            max_atom.append(charges.shape[1])
-
-        if names is not None and names.shape[0] != 0:
-            if names.ndim != 1:
-                print('Gdata: loaded names data dimension did not match requirement!')
+            # check number of dimension:
+            if np.ndim(charges) is not 2:
+                print('Gdata: number of dimension of charge info is not correct!')
+                print('Gdata: expect to be 2, but %d detected' % (np.ndim(charges)))
                 return False
+            # save max_atom for later
+            max_atom_list.append(charges.shape[1])
+        
+        # check name: ideal shape should be [x]
+        if names is not None:
+            # save data number for later:
             data_num.append(names.shape[0])
-
-        if topologies is not None and topologies.shape[0] != 0:
-            if topologies.ndim != 3:
-                print(
-                    'Gdata: loaded topologies data dimension did not match requirement!')
+            # check number of dimension:
+            if np.ndim(names) is not 1:
+                print('Gdata: number of dimension of name info is not correct!')
+                print('Gdata: expect to be 1, but %d detected' % (np.ndim(names)))
                 return False
-            if topologies.shape[1] != topologies.shape[2]:
-                print('Gdata: loaded topologies data shape did not symmetric')
-                return False
+        
+        # check topo info: ideal shape should be [x, max_atom, max_atom]
+        if topologies is not None:
+            # save data number for later
             data_num.append(topologies.shape[0])
-            max_atom.append(topologies.shape[1])
-
-        if dipoles is not None and dipoles.shape[0] != 0:
-            if dipoles.ndim != 2:
-                print('Gdata: loaded names data dimension did not match requirement!')
+            # check number of dimension:
+            if np.ndim(topologies) is not 3:
+                print('Gdata: number of dimension of topology info is not correct!')
+                print('Gdata: expect to be 3, but %d detected' % (np.ndim(topologies)))
                 return False
+            # check shape consistency of dimension 1 and dimension 2
+            if topologies.shape[1] != topologies.shape[2]:
+                print('Gdata: data inconsistency found in topology info!')
+                print('Gdata: shape in dimension 1 and 2 are expected to be the same, but now it is %d in dimension 1 and %d in dimension 2' % (topologies.shape[1], topologies.shape[2]))
+                return False
+            # save max_atom for later
+            max_atom_list.append(topologies.shape[1])
+
+        # check dipole info: ideal shape should be [x, 3]
+        if dipoles is not None:
+            # save data number for later
             data_num.append(dipoles.shape[0])
-        # check whether data have same data number and max_atom
-        if data_num.count(data_num[0]) != len(data_num):
-            print('Gdata: the number of data does not match between data!')
-            return False
-        if max_atom.count(max_atom[0]) != len(max_atom):
-            print('Gdata: the maximum allowed atom number does not match between data!')
-            return False
+            # check number of dimension
+            if np.ndim(dipoles) is not 2:
+                print('Gdata: number of dimension of dipole info is not correct!')
+                print('Gdata: expect to be 2, but %d detected' % (np.ndim(dipoles)))
+                return False
+            # check shape in dimension 1
+            if dipoles.shape[1] is not 3:
+                print('Gdata: data shape of dipole info in dimension 1 in not correct!')
+                print('Gdata: expect to be 3, but %d detected' % (dipoles.shape[1]))
+                return False
+            
+        # check max_atom consistency
+        if len(max_atom_list) is not 0:
+            if max_atom_list.count(max_atom_list[0]) != len(max_atom_list):
+                print('Gdata: data inconsistency found in max_atom!')
+                print("Gdata: auto check is not yet supported. please check data manually use get_data_shape() method!")
+                return False
+        
+        # check data_num consistency
+        if len(data_num) is not 0:
+            if data_num.count(data_num[0]) != len(data_num):
+                print('Gdata: data inconsistency found in data number!')
+                print("Gdata: auto check is not yet supported. please check data manually use get_data_shape() method!")
+                return False
 
         return True
 
@@ -520,8 +570,160 @@ class Gdata():
 
         return structure, topology
         
+    def __read_mol2(self, file: TextIOWrapper) -> np.ndarray:
+        """
+        Read in .mol2 file
+
+        Args:
+            file: file to be read. type <TextIOWrapper>
+        Return:
+            structure: structral coordinates. type <np.ndarray>
+            topology: topological information. type <np.ndarray>
+        """
+
+        position = file.tell()
+        file.seek(0, 0)
+        file_content = file.readlines()
+
+        # read general info
+        for line_no in range(len(file_content)):
+            line_temp = file_content[line_no]
+            if line_temp.find('@<TRIPOS>MOLECULE') is not -1:
+                stat_line = file_content[line_no+2]
+                atom_num = int(stat_line.split()[0])
+                bond_num = int(stat_line.split()[1])
+            elif line_temp.find('@<TRIPOS>ATOM') is not -1:
+                atom_start = line_no + 1
+            elif line_temp.find('@<TRIPOS>BOND') is not -1:
+                bond_start = line_no + 1
+
+        # check max_atom
+        if atom_num > self.max_atom:
+            print("Gdata: number of atoms read is larger than maximun allow atom!")
+            print("Gdata: auto change max_atom to %d." % (atom_num))
+            self.change_max_atom(atom_num)
+
+        # read structure info
+        structure = np.zeros((1, self.max_atom, 4), dtype=float)
+        for atom_no in range(atom_num):
+            line_temp = file_content[atom_start+atom_no]
+            line_temp = line_temp.split()
+            structure[0, atom_no, 0] = element_dic(line_temp[5].split('.')[0])
+            structure[0, atom_no, 1] = float(line_temp[2])
+            structure[0, atom_no, 2] = float(line_temp[3])
+            structure[0, atom_no, 3] = float(line_temp[4])
+
+        # read topological info
+        topology = np.zeros((1, self.max_atom, self.max_atom), dtype=int)
+        for bond_no in range(bond_num):
+            line_temp = file_content[bond_start+bond_no]
+            line_temp = line_temp.split()
+            atom_1 = int(line_temp[1]) - 1
+            atom_2 = int(line_temp[2]) - 1
+            bond_type = bond_dic(line_temp[3])
+            topology[0, atom_1, atom_2] = bond_type
+            topology[0, atom_2, atom_1] = bond_type
+
+        # move back pointer
+        file.seek(position, 0)
+
+        return structure, topology
 
     """ PUBLIC """
+    def copy(self):
+        """
+        Copy current gdata object
+
+        Args:
+            None.
+        Return:
+            gdata_copied: a copied object of current object. type <gdata.Gdata>
+        """
+
+        gdata_copied = gdata(self.max_atom, 
+                        self.charge_type, 
+                        self.get_structures(), 
+                        self.get_charges(),
+                        self.get_names(),
+                        self.get_topologies(),
+                        self.get_dipole(style='xyz'))
+        gdata_copied.charge_type = self.charge_type
+        gdata_copied.mi_coor = self.mi_coor
+        return gdata_copied
+
+    def read_mol2_dir(self, dir_name: str):
+        """
+        Read .mol2 files from folder
+
+        Args:
+            dir_name: dir path and name to be read. type <str>
+        Return:
+            None
+        """
+        # check '/'
+        name_len = len(dir_name)
+        if dir_name[name_len-1] != '/':
+            dir_name = dir_name + '/'
+
+        file_list = os.listdir(dir_name)
+
+        file_num = len(file_list)
+        fail_num = 0
+        print('Gdata: Start reading mol2 data from', dir_name)
+        for file_name in tqdm(file_list):
+            full_name = dir_name + file_name    # conbine name
+
+            # skip wrong file
+            try:
+                file = open(full_name, 'r')
+            except:
+                print('Gdata: Fail to open file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
+
+            try:
+                structure, topology = self.__read_mol2(file)
+            except:
+                print('Gdata: Fail to read file', full_name, 'Skipped!')
+                fail_num = fail_num + 1
+                continue
+            real_name = self.__find_real_name(file_name)
+            # append this structure to list
+            self.structures = np.append(
+                self.structures, structure, axis=0)
+            # append this topology to list
+            self.topologies = np.append(self.topologies, topology, axis=0)
+            # append this name to list
+            self.names = np.append(self.names, real_name)
+            file.close()
+
+        print('Gdata:', file_num - fail_num,
+                'mol2 files read successfully!', fail_num, 'failed')
+
+    def read_mol2_file(self, file_name: str):
+        """
+        Read single .mol2 file
+
+        Args:
+            file_name: file path and name to be read. type <str>
+        Return:
+            None
+        """
+
+        file = open(file_name, 'r')
+        strucutre, topology = self.__read_mol2(file)
+
+        real_name = self.__find_real_name(file_name)
+
+        self.structures = np.append(self.structures, strucutre, axis=0)
+        self.topologies = np.append(self.topologies, topology, axis=0)
+        self.names = np.append(self.names, real_name)
+
+        file.close()
+
+        print('Gdata: mol2 file successfully read:', file_name)
+
+
     def read_mol_dir(self, dir_name: str):
         """
         Read .mol files from folder
@@ -1041,7 +1243,6 @@ class Gdata():
 
         max_atom_list = np.append(max_atom_list, np.count_nonzero(self.structures, axis=1).max())
         max_atom_list = np.append(max_atom_list, np.count_nonzero(self.charges, axis=1).max())
-        max_atom_list = np.append(max_atom_list, np.count_nonzero(self.topologies, axis=1).max())
         max_atom_num = np.max(max_atom_list[1:])
         if max_atom_num < 1:
             print('Gdata: Unable to minimise this class. max_atom not changed.')
@@ -1222,11 +1423,16 @@ class Gdata():
                     xyz: output dipole in x, y and z directions
         Return:
             dipole: dipole moment information. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
+        dipole_output = self.dipoles[1:]
+        # if no dipole data
+        if dipole_output.shape[0] is 0:
+            return None
         if style == 'xyz':
-            return self.dipoles[1:]
+            return dipole_output
         elif style == 'norm':
-            return np.linalg.norm(self.dipoles[1:], axis=1)
+            return np.linalg.norm(dipole_output, axis=1)
 
     # get degree matrix
     def get_degree(self) -> np.ndarray:
@@ -1237,10 +1443,14 @@ class Gdata():
             None
         Returns:
             degree: degree matrix for GCN. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
 
         # modified topologies to degree matrix
         adjacency = self.get_adjacency()
+        # if no adjacency
+        if adjacency is None:
+            return None
         degree = np.zeros(adjacency.shape)
 
         for data_num in range(adjacency.shape[0]):
@@ -1259,14 +1469,17 @@ class Gdata():
             self_loop: add self-bond to adjacency matrix. type <bool>
         Returns:
             adjacency: adjacency matrix for GCN. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
+        
+        
+        adjacency = self.get_topologies()
+        
         # if no topologies
-        if self.topologies.shape[0] < 2:
-            print('Gdata: topology data does not exist!')
+        if adjacency is 0:
             return None
 
         # modified topologies to ajacency matrix, move all non-zero to 1
-        adjacency = self.topologies[1:]
         adjacency[adjacency != 0] = 1
 
         # add identity
@@ -1278,7 +1491,7 @@ class Gdata():
 
         return adjacency
 
-    # get topological data
+    
     def get_atom_info(self, style: str='array') -> np.ndarray:
         """
         Output atom type in order
@@ -1290,9 +1503,15 @@ class Gdata():
                     matrix: output atomic number in matrix
         Returns:
             atom_info: atomic number in array or matrix. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
 
         atom_info = np.array(self.structures[1:, :, 0], dtype=int)
+
+        # if no info
+        if atom_info.shape[0] is 0:
+            return None
+
 
         if style == 'matrix':
             atom_matrix = np.zeros((1, self.max_atom, self.max_atom), dtype=int)
@@ -1307,6 +1526,7 @@ class Gdata():
         elif style == 'array':
             return atom_info
 
+    # get topological data
     def get_topologies(self, self_loop: bool=False) -> np.ndarray:
         """
         Output stored topological data
@@ -1315,8 +1535,13 @@ class Gdata():
             self_loop: add self loop to topology matrix. type <bool>
         Returns:
             topologies: and matrix of topologies info. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
         topologies = self.topologies[1:]
+
+        # if no data
+        if topologies.shape[0] is 0:
+            return None
 
         if self_loop == True:
             atom_info = self.get_atom_info(style='matrix')
@@ -1335,8 +1560,14 @@ class Gdata():
             None
         Returns:
             names: an array of read files name. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
-        return self.names[1:]
+        name_output = self.names[1:]
+
+        # if no data
+        if name_output.shape[0] is 0:
+            return None
+        return name_output
 
     # get charges data
 
@@ -1351,9 +1582,13 @@ class Gdata():
                     matrix: output charge in diagonal element of a matrix
         Returns:
             charges: an array contains charges distribution. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
 
         chagre_info = self.charges[1:]
+        # if no data
+        if chagre_info.shape[0] is 0:
+            return None
 
         if style == 'matrix':
             charge_matrix = np.zeros(
@@ -1381,13 +1616,40 @@ class Gdata():
             coor_only: output coordinates info only. type <bool>
         Returns:
             structures: an array contains structural coordinates. type <numpy.ndarray>
+            *** return None if no data avaliable
         """
+
+        # if no data
+        if self.structures.shape[0] is 1: 
+            return None
+
         if coor_only is False:
             return self.structures[1:]
         else:
             return self.structures[1:, :, 1:]
 
     # load data from npy
+    def load_all(self, directory: str):
+        # check '/'
+        name_len = len(directory)
+
+        if directory[name_len-1] != '/':
+            directory = directory + '/'
+        # check dir exist
+        try:
+            os.listdir(directory)
+        except:
+            os.mkdir(directory)
+        # combine name
+        structure_name = directory + 'structure.npy'
+        charge_name = directory + 'charge.npy'
+        name_name = directory + 'name.npy'
+        topology_name = directory + 'topology.npy'
+        dipole_name = directory + 'dipole.npy'
+        config_name = directory + 'config.npy'
+        
+        self.load(
+            structure_name, charge_name, name_name, topology_name, dipole_name, config_name)
 
     def load(self,
              structure_name: str=None,
@@ -1468,6 +1730,27 @@ class Gdata():
                       'Maximum allowed atom changed to', self.max_atom)
 
     # save data as npy
+    def save_all(self, directory: str):
+        # check '/'
+        name_len = len(directory)
+
+        if directory[name_len-1] != '/':
+            directory = directory + '/'
+        # check dir exist
+        try:
+            os.listdir(directory)
+        except:
+            os.mkdir(directory)
+        # combine name
+        structure_name = directory + 'structure.npy'
+        charge_name = directory + 'charge.npy'
+        name_name = directory + 'name.npy'
+        topology_name = directory + 'topology.npy'
+        dipole_name = directory + 'dipole.npy'
+        config_name = directory + 'config.npy'
+        
+        self.save(
+            structure_name, charge_name, name_name, topology_name, dipole_name, config_name)
 
     def save(self,
              structure_name: str=None,
@@ -1662,8 +1945,6 @@ def gdata(max_atom=100,
     if type(dipoles) == np.ndarray:
         gd.dipoles = np.append(gd.dipoles, dipoles, axis=0)
 
-    if structures == charges == names == topologies == None:
-        return gd
     # data check
     gd.self_check()
 
@@ -1682,8 +1963,8 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
     """
 
     # copy class
-    Gdata1 = Gdata_a
-    Gdata2 = Gdata_b
+    Gdata1 = Gdata_a.copy()
+    Gdata2 = Gdata_b.copy()
 
     # data check
     if Gdata1.self_check() == False or Gdata2.self_check() == False:
@@ -1734,15 +2015,15 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
         if loc2_array[0].ndim != 1:
             print('Gdata: Dimension error!')
             raise
-        if loc2_array[0].shape[0] > 1:
-            print('Gdata: more than one name matched! Name:', name_temp)
+        if loc2_array[0].shape[0] is not 1:
+            print('Gdata: more than one name matched or bad matching! Name:', name_temp)
             raise
-        elif loc2_array[0].shape[0] == 1:
+        else:
 
             loc2 = loc2_array[0][0]
 
             # structure
-            if np.array_equal(structure1[loc1], structure2[loc2]) == True:
+            if np.min(np.array_equal(structure1[loc1], structure2[loc2])) == True:
                 strcture_temp = structure1[loc1]
             elif np.count_nonzero(structure1[loc1]) * np.count_nonzero(structure2[loc2]) == 0:
                 strcture_temp = structure1[loc1] + structure2[loc2]
@@ -1754,7 +2035,7 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
                 raise
 
             # charge
-            if np.array_equal(charge1[loc1], charge2[loc2]) == True:
+            if np.min(np.array_equal(charge1[loc1], charge2[loc2])) == True:
                 charge_temp = charge1[loc1]
             elif np.count_nonzero(charge1[loc1]) * np.count_nonzero(charge2[loc2]) == 0:
                 charge_temp = charge1[loc1] + charge2[loc2]
@@ -1766,7 +2047,7 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
                 raise
 
             # topology
-            if np.array_equal(topology1[loc1], topology2[loc2]) == True:
+            if np.min(np.array_equal(topology1[loc1], topology2[loc2])) == True:
                 topology_temp = topology1[loc1]
             elif np.count_nonzero(topology1[loc1]) * np.count_nonzero(topology2[loc2]) == 0:
                 topology_temp = topology1[loc1] + topology2[loc2]
@@ -1778,7 +2059,7 @@ def merge(Gdata_a: Gdata, Gdata_b: Gdata) -> Gdata:
                 raise
             
             # dipole
-            if np.array_equal(dipole1[loc1], dipole2[loc2]) == True:
+            if np.min(np.array_equal(dipole1[loc1], dipole2[loc2])) == True:
                 dipole_temp = dipole1[loc1]
             elif np.count_nonzero(dipole1[loc1]) * np.count_nonzero(dipole2[loc2]) == 0:
                 dipole_temp = dipole1[loc1] + dipole2[loc2]

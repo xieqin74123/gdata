@@ -76,10 +76,11 @@ def gdata_menu_title (selected_data: int):
     print('4 \t - \t Read Gaussian log')
     print('5 \t - \t Read Gaussian zmat')
     print('6 \t - \t Read mol File')
-    print('7 \t - \t Save Data as .npy')
-    print('8 \t - \t Laod .npy Data')
-    print('9 \t - \t Manage .xyz Structure Data')
-    print('10 \t - \t Convert to MI Based Coordinates')
+    print('7 \t - \t Read mol2 File')
+    print('8 \t - \t Save Data as .npy')
+    print('9 \t - \t Laod .npy Data')
+    print('10 \t - \t Manage .xyz Structure Data')
+    print('11 \t - \t Convert to MI Based Coordinates')
 
     # information
     print('INFORMATION:')
@@ -133,19 +134,22 @@ def gdata_menu (selected_data: int):
         elif ucommand == 5:     # read zmat
             read_zmat(selected_data)
             gdata_menu_title(selected_data)
-        elif ucommand == 6:
+        elif ucommand == 6:     # read mol
             read_mol(selected_data)
             gdata_menu_title(selected_data)
-        elif ucommand == 7:     # save data
+        elif ucommand == 7:     # read mol2
+            read_mol2(selected_data)
+            gdata_menu_title(selected_data)
+        elif ucommand == 8:     # save data
             data_save_load(selected_data, 'save')
             gdata_menu_title(selected_data)
-        elif ucommand == 8:     # load data
+        elif ucommand == 9:     # load data
             data_save_load(selected_data, 'load')
             gdata_menu_title(selected_data)
-        elif ucommand == 9:     # manage xyz
+        elif ucommand == 10:     # manage xyz
             manage_xyz(selected_data)
             gdata_menu_title(selected_data)
-        elif ucommand == 10:
+        elif ucommand == 11:
             try:
                 gdata_list[selected_data].convert_to_mi_coordinate()
             except Exception as e:
@@ -161,6 +165,52 @@ def gdata_menu (selected_data: int):
         # error
         else:
             print('Invalid Input!')
+
+
+def read_mol2 (selected_data:int):
+    global gdata_list
+
+    read_mol2_title(selected_data)
+
+    while(1):
+        ucommand = input_command()
+        if ucommand == -1:  # Refresh
+            read_mol2_title(selected_data)
+        elif ucommand == 0: # Back
+            return 0
+        elif ucommand == 1: # Read Single mol2 File
+            path = input_command('Path:', numeric_check=False)
+            try:
+                gdata_list[selected_data].read_mol2_file(path)
+                return 0
+            except Exception as e:
+                print(e)
+                input_command('Press Enter to Continue', numeric_check=False)
+                clear()
+        elif ucommand == 2: # Read mol2 files from Folder
+            path = input_command('Path:', numeric_check=False)
+            try:
+                gdata_list[selected_data].read_mol2_dir(path)
+                return 0
+            except Exception as e:
+                print(e)
+                input_command('Press Enter to Continue', numeric_check=False)
+                clear()
+        # error
+        else:
+            print('Invalid Input!')
+
+def read_mol2_title (selected_data):
+    global gdata_name
+
+    clear()
+    print('Read mol2 file to %s' % (gdata_name[selected_data]))
+    print('OPERATIONS:')
+    print('-1 \t - \t Refresh')
+    print('0 \t - \t Back')
+    print('1 \t - \t Read Single mol2 File')
+    print('2 \t - \t Read mol2 Files from Floder')
+
 def read_mol (selected_data:int):
     global gdata_list
 
