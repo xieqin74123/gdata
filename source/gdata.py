@@ -1630,6 +1630,14 @@ class Gdata():
 
     # load data from npy
     def load_all(self, directory: str):
+        """
+        A quick load method via defaul names. Should only read data that saved by method save_all()
+
+        Args:
+            directory: a place to read data from. type <str>
+        Returns:
+            None
+        """
         # check '/'
         name_len = len(directory)
 
@@ -1731,6 +1739,14 @@ class Gdata():
 
     # save data as npy
     def save_all(self, directory: str):
+        """
+        A quick save method via defaul names. Can use method load_all() to quickly read data
+
+        Args:
+            directory: a place to save data. type <str>
+        Returns:
+            None
+        """
         # check '/'
         name_len = len(directory)
 
