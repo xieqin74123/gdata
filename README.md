@@ -2,9 +2,9 @@
 Gaussian data processing tool. Designed for large number of Gaussian .log files read/convert/manage operations. Used as machine learning data pre-processing tool.
 
 # Dependencies
-- numpy
-- tqdm
-- bidict
+- numpy (tested on version 1.21.6)
+- tqdm (tested on version 4.62.3)
+- bidict (tested on version 0.22.0)
 
 # Usage
 'gdata_main.py' is the terminal based GUI for basic usage. This should be located on the same folder of 'gdata.py' and can be run simply from terminal.
